@@ -102,7 +102,7 @@ def test_run_returns_before_tracker_save_when_all_scores_skip(tmp_path):
             )
             with patch("agent.orchestrator.deduplicate", return_value=[listing]):
                 with patch("agent.orchestrator.score_listing", return_value=skip_score):
-                    with patch("agent.tracker.postgres.PostgresTracker.save") as mock_save:
+                    with patch("agent.tracker.sql.SqlTracker.save") as mock_save:
                         run(manual=True, dry_run=False)
 
         mock_save.assert_not_called()

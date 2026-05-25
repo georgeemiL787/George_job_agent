@@ -1,296 +1,120 @@
-# George's Local AI Job Search Agent
+# George Job Agent Desktop
 
-A local Python CLI agent and web app that automates the AI/ML job search workflow for George Emil Sadek. Searches Egyptian job boards, scores roles against the candidate profile, tailors a unique ATS-optimized CV for every strong match, writes a professional cover letter, and tracks roles in Supabase PostgreSQL.
+Native Windows desktop app and CLI for George Emil Sadek's AI/ML job search workflow.
 
-The current build includes the `NEXT_PLAN.md` implementation: Postgres tracker, local FastAPI web UI, configurable scheduler, and on-demand Excel export.
-
----
+The app searches Egyptian job boards, scores roles against George's profile, tailors ATS-friendly CVs and cover letters, tracks roles locally in SQLite, and exports Excel workbooks when needed. It is local-first: no website deployment, no Supabase requirement, and no public dashboard.
 
 ## Prerequisites
 
-- Python 3.11 or later
-- TeX Live or MiKTeX is optional. Without `pdflatex`, CVs and cover letters are saved as `.tex` only.
-- Playwright Chromium (for Indeed Egypt scraper)
+- Windows 10/11
+- Python 3.11 or later for source runs
+- Playwright Chromium for the Indeed scraper
+- TeX Live or MiKTeX is optional. Without `pdflatex`, the app saves `.tex` artifacts only.
 
-Check Python version:
-```
-python --version
-```
+## Install For Source Runs
 
-Check pdflatex:
-```
-pdflatex --version
-```
-If this command is unavailable, the agent still runs and writes `.tex` artifacts; install MiKTeX or TeX Live later when you need PDFs.
-
----
-
-## Installation
-
-1. Clone or copy this directory to your machine.
-
-2. Install Python dependencies:
-```
-python -m pip install -r requirements.txt
-```
-
-3. Install Playwright Chromium browser:
-```
-python -m playwright install chromium
-```
-
-4. Copy the example env file and fill in your API key:
-```
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
 copy .env.example .env
 ```
 
----
+Start the desktop app:
 
-## .env Setup
-
-Edit `.env`:
+```powershell
+.\.venv\Scripts\python.exe -m agent desktop
 ```
+
+The first-run setup wizard can write `.env`, initialize SQLite, verify Playwright, and check optional LaTeX support.
+
+## Local Config
+
+Default local settings:
+
+```env
 OPENROUTER_API_KEY=your-openrouter-api-key-here
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-SCORING_MODEL=nvidia/nemotron-3-super-120b-a12b:free
-CV_MODEL=nvidia/nemotron-3-super-120b-a12b:free
-LETTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
-FALLBACK_MODEL=openai/gpt-oss-120b:free
 WORKSPACE_DIR=workspace
+DATABASE_URL=sqlite:///workspace/tracker/job_agent.db
 CV_VARIATIONS_DIR=cv_variations
 LATEX_BIN=pdflatex
-LOG_LEVEL=INFO
+SCHEDULE_INTERVAL_HOURS=4
+MAX_ROLES_PER_RUN=20
 MIN_SCORE_TO_TAILOR=60
-NOTIFY_ENABLED=false
-DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
-WEB_HOST=127.0.0.1
-WEB_PORT=8080
-WEB_TOKEN=your-long-random-admin-token
-ENVIRONMENT=local
-PUBLIC_CV_PATH=cv_variations/george_emil_aiml_engineer_cv.pdf
-PUBLIC_EMAIL=
-PUBLIC_LINKEDIN=
-PUBLIC_GITHUB=
 ```
 
-Copy from `.env.example`. For production runs, prefer stable (often paid) models for `CV_MODEL` and `LETTER_MODEL` to reduce LaTeX/JSON failures.
+The tracker database is local SQLite. The existing workbook at `workspace/tracker/george_emil_job_tracker.xlsx` is imported once when the database is empty, and Excel export remains available from the app and CLI.
 
-The OpenRouter API key is free to obtain at https://openrouter.ai
+## Desktop Screens
 
----
+- Dashboard: run full/dry cycles, see scraper health, top roles, and schedule status.
+- Roles: browse, filter, import/export Excel, and open role details.
+- Role Detail: tailor CV, approve, package, mark applied, and open artifact folders.
+- Add Role: paste a LinkedIn/manual role and process it through scoring/tailoring.
+- Run Monitor: view local logs.
+- Settings: run setup checks, open workspace, and sync the master CV stub.
 
-## First Run
-
-The workspace memory files are pre-seeded from your existing profile. Run a dry-run first to verify everything works:
-```
-python -m agent run --dry-run
-```
-
-This searches all sources and scores roles, but does not write any files or tailor CVs. Review the terminal output.
-
-Then run the full cycle:
-```
-python -m agent run
-```
-
----
+The scheduler runs only while the desktop app is open. Use Off / 1h / 2h / 4h from the Dashboard.
 
 ## CLI Reference
 
 | Command | Description |
 |---|---|
+| `python -m agent desktop` | Start the native Windows desktop app |
 | `python -m agent run` | Full search, score, tailor, track cycle |
 | `python -m agent run --dry-run` | Score only, nothing written to disk |
-| `python -m agent status` | Print top open roles from tracker |
-| `python -m agent tailor <slug>` | Force-tailor CV for one role by its slug |
-| `python -m agent add-role` | Add a role (interactive, file, or flags) |
-| `python -m agent add-linkedin` | Same; defaults source to LinkedIn |
-| `python -m agent review <slug>` | Review artifacts; optionally approve |
-| `python -m agent approve <slug>` | Mark role Ready for apply |
-| `python -m agent package <slug>` | Bundle CV/letter PDFs for one role |
-| `python -m agent sync-master` | Regenerate `workspace/cv/master/george_master.tex` stub |
-| `python -m agent mark-applied <slug>` | Mark a role as applied in tracker |
-| `python -m agent schedule` | Start the 4-hour background scheduler |
-| `python -m agent status --drafts` | Show Draft roles awaiting review |
-| `python -m agent web` | Start the local web UI and API |
-| `python -m agent import-tracker` | Import the existing Excel tracker into Postgres |
-| `python -m agent export-tracker` | Export Postgres tracker rows to Excel |
+| `python -m agent status` | Print top open roles and latest scraper health |
+| `python -m agent add-role` | Add a role interactively, from file, or flags |
+| `python -m agent add-linkedin` | Same, defaulting source to LinkedIn |
+| `python -m agent tailor <slug>` | Force-tailor CV for one tracked role |
+| `python -m agent review <slug>` | Review artifacts and optionally approve |
+| `python -m agent approve <slug>` | Mark role Ready |
+| `python -m agent package <slug>` | Bundle role artifacts |
+| `python -m agent mark-applied <slug>` | Mark role applied |
+| `python -m agent import-tracker` | Import Excel tracker into SQLite |
+| `python -m agent export-tracker` | Export SQLite tracker to Excel |
+| `python -m agent schedule` | Start CLI scheduler while terminal is open |
 
----
+## Build The Windows App
 
-## Adding a LinkedIn Role (recommended)
-
-LinkedIn has no public job-search API and blocks automated scraping. Use **manual capture** — the agent scores, tailors, and tracks the role like any board listing.
-
-### Option A — interactive
-
-```
-python -m agent add-linkedin
+```powershell
+.\scripts\build_desktop.ps1 -Clean
 ```
 
-Paste title, company, location, LinkedIn job URL, and the full JD (blank line to finish).
+Build output:
 
-### Option B — JSON or Markdown file
-
-Copy a template, fill it in, then run:
-
-```
-copy agent\templates\linkedin_role.json workspace\roles\my_role.json
-python -m agent add-linkedin --file workspace\roles\my_role.json
+```text
+dist\GeorgeJobAgent\GeorgeJobAgent.exe
 ```
 
-Templates: `agent/templates/linkedin_role.json` and `agent/templates/linkedin_role.md`.
-
-### Option C — CLI flags
-
-```
-python -m agent add-linkedin --title "AI Engineer" --company "Acme" --location "Cairo" ^
-  --url "https://www.linkedin.com/jobs/view/123" --description-file jd.txt
-```
-
-The tracker source is `linkedin` when the URL is on linkedin.com; otherwise `manual`. Roles are logged in `workspace/memory/applications-log.md`.
-
----
-
-## Web UI
-
-Start the local site:
-
-```
-python -m agent web
-```
-
-Open `http://127.0.0.1:8080`. The public root page is George's curated AI/ML engineer profile and CV download. The private job-agent dashboard is under `/admin` and requires `WEB_TOKEN` through `/login`.
-
-The admin UI includes Dashboard, Roles, Role detail, and Add role pages. It calls the same scoring, tailoring, packaging, and tracker modules as the CLI. Do not expose `/admin` without a strong token.
-
----
-
-## Render Deployment
-
-This repo is intended to remain private while the website can be public. Before deploying, rotate any previously exposed OpenRouter key and set fresh values in Render.
-
-The included `Dockerfile` installs Python dependencies and Playwright Chromium. The included `render.yaml` defines a Docker web service, health check, persistent disk at `/var/data`, and secret env vars with `sync: false`.
-
-Required Render env vars:
-
-```
-OPENROUTER_API_KEY=<fresh rotated key>
-DATABASE_URL=<Supabase Postgres connection string>
-WEB_TOKEN=<long random admin token>
-```
-
-Recommended Render env vars:
-
-```
-WORKSPACE_DIR=/var/data/workspace
-WEB_HOST=0.0.0.0
-ENVIRONMENT=production
-PUBLIC_EMAIL=
-PUBLIC_LINKEDIN=
-PUBLIC_GITHUB=
-```
-
-The app honors Render's `PORT` automatically. On startup it seeds missing `workspace/memory/*` files from the bundled private source data into the persistent workspace.
-
----
-
-## Starting the Scheduler
-
-The CLI scheduler runs a full cycle every 4 hours in `Africa/Cairo` timezone (configurable via `SCHEDULE_INTERVAL_HOURS` in `.env`):
-
-```
-python -m agent schedule
-```
-
-It runs once immediately on startup, then on the interval. Press Ctrl+C to stop.
-
-The web dashboard also controls a background scheduler with Off / 1h / 2h / 4h options stored in `workspace/config/schedule.json`.
-
----
-
-## Tracker
-
-Live tracker state is stored in Postgres through `DATABASE_URL`. Import the existing workbook once:
-
-```
-python -m agent import-tracker
-```
-
-Generate an Excel copy when needed:
-
-```
-python -m agent export-tracker
-```
-
-The Excel file remains useful for viewing/export, but it is no longer the live source of truth.
-
----
-
+The PyInstaller build includes app code, templates, workspace memory files, tracker workbook, role templates, and CV variation PDFs.
 
 ## Output Files
 
 | Path | Contents |
 |---|---|
-| `workspace/cv/tailored/<slug>.tex` | Tailored LaTeX CV for one role |
-| `workspace/cv/tailored/<slug>.pdf` | Compiled PDF (only when pdflatex is installed) |
+| `workspace/tracker/job_agent.db` | Local SQLite tracker database |
+| `workspace/tracker/george_emil_job_tracker.xlsx` | Excel import/export workbook |
+| `workspace/cv/tailored/<slug>.tex` | Tailored LaTeX CV |
+| `workspace/cv/tailored/<slug>.pdf` | Optional compiled PDF |
 | `workspace/cover_letters/<slug>_letter.tex` | Cover letter LaTeX |
-| `workspace/cover_letters/<slug>_letter.pdf` | Cover letter PDF (only when pdflatex is installed) |
-| `workspace/tracker/george_emil_job_tracker.xlsx` | Optional Excel export from Postgres |
-| `workspace/logs/agent.log` | Full agent log |
-| `workspace/memory/cv-facts.md` | Core CV facts (sent to LLM) |
-| `workspace/memory/cv-role-playbook.md` | Company/role tailoring notes |
-| `workspace/memory/tracker-priorities.md` | Tracker ordering journal (not sent to LLM) |
-| `workspace/memory/cv-variations.md` | PDF archive index |
-| `workspace/logs/runs/*.json` | Structured per-run reports |
-| `workspace/packages/<slug>/` | Apply bundles from `package` command |
-| `cv_variations/*.pdf` | Historical tailored CV PDFs (reference archive) |
+| `workspace/cover_letters/<slug>_letter.pdf` | Optional compiled PDF |
+| `workspace/logs/agent.log` | App/agent log |
+| `workspace/logs/runs/*.json` | Structured run reports |
+| `workspace/packages/<slug>/` | Application package folder |
 
-**Deprecated:** root-level `cv-notes.md` and `job-search-profile.md` — edit `workspace/memory/` only.
+## Tests
 
-New tailored outputs start as **Draft** in the tracker until you run `review` or `approve`.
-
----
-
-## Running Tests
-
-```
-python -m pytest tests/ -v
+```powershell
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m pytest tests/ -v
+.\.venv\Scripts\python.exe -m pip check
 ```
 
----
+## Rules
 
-## Job Sources
-
-| Source | Method | Notes |
-|---|---|---|
-| Wuzzuf | httpx + BeautifulSoup4 | Primary Egypt source |
-| Bayt | httpx + BeautifulSoup4 | Strong Egypt/MENA coverage |
-| Tanqeeb | httpx + BeautifulSoup4 | Egypt-focused board |
-| Indeed Egypt | Playwright (headless) | Requires playwright install |
-| LinkedIn | `add-linkedin` / `add-role --file` | Manual capture (no scraping) |
-
----
-
-## CV Tailoring Strategy
-
-A new CV is generated for every role that scores 60 or above. The LLM:
-
-1. Extracts the top 8 keywords and requirements from the job description
-2. Rewrites the Summary section for this exact role and company
-3. Reorders sections based on role type (CV-first for vision roles, LLM tooling first for AI engineer roles)
-4. Injects the JD keywords naturally into bullet points where truthfully supported
-5. Includes all relevant quantifiable results from the master facts
-6. Ensures single-column ATS-safe output with no icons or tables
-
-The master CV at `workspace/cv/master/george_master.tex` is never submitted directly.
-
----
-
-## Absolute Rules
-
-- The agent never invents qualifications, employers, or metrics
-- An application is only marked applied when you confirm it with `mark-applied`
-- Existing applied/interviewed rows in the tracker are never overwritten
-- PDFs are optional; `.tex` artifacts are valid output when `pdflatex` is unavailable
-- Database credentials stay in `.env` only — never in the repository
+- The app never invents qualifications, employers, or metrics.
+- Applications are marked applied only when you confirm them.
+- Existing applied/interviewed rows are not overwritten.
+- `.tex` artifacts are valid output when `pdflatex` is unavailable.
+- Keep `.env` private; rotate any previously exposed OpenRouter key.

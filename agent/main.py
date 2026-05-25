@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import io
-import os
 import sys
 import datetime as dt
 from pathlib import Path
@@ -379,7 +378,7 @@ def mark_applied(
 def export_tracker_cmd(
     output: str = typer.Option("", "--output", "-o", help="Output xlsx path."),
 ) -> None:
-    """Export the Postgres tracker to an Excel workbook."""
+    """Export the local SQL tracker to an Excel workbook."""
     from agent.tracker.import_export import export_tracker
 
     settings = get_settings()
@@ -391,37 +390,31 @@ def export_tracker_cmd(
 def import_tracker_cmd(
     source: str = typer.Option("", "--source", "-s", help="Source xlsx path."),
 ) -> None:
-    """Import an existing Excel tracker into Postgres."""
+    """Import an existing Excel tracker into the local SQL tracker."""
     from agent.tracker.import_export import import_tracker
 
     settings = get_settings()
     count = import_tracker(settings, Path(source) if source else None)
-    print(f"Imported {count} roles into Postgres.")
+    print(f"Imported {count} roles into the local SQL tracker.")
 
 
 @app.command()
-def web() -> None:
-    """Start the local web UI and API."""
+def desktop() -> None:
+    """Start the Windows desktop app."""
     _setup_logging()
-    import uvicorn
+    from agent.desktop import run_desktop
 
-    settings = get_settings()
-    port = int(os.getenv("PORT", str(settings.web_port)))
-    print(f"Starting web UI: http://{settings.web_host}:{port}")
-    uvicorn.run(
-        "agent.web.app:app",
-        host=settings.web_host,
-        port=port,
-        reload=False,
-    )
+    raise_code = run_desktop()
+    if raise_code:
+        raise typer.Exit(raise_code)
 
 
 @app.command()
 def schedule() -> None:
-    """Start the 4-hour background scheduler."""
+    """Start the CLI scheduler using the configured interval."""
     _setup_logging()
     from agent.scheduler.job import start_scheduler
-    print("Starting scheduler (Africa/Cairo, every 4 hours). Press Ctrl+C to stop.")
+    print("Starting scheduler (Africa/Cairo). Press Ctrl+C to stop.")
     start_scheduler()
 
 

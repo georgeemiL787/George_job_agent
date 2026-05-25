@@ -1,5 +1,4 @@
-"""Agent configuration using pydantic-settings + .env"""
-import os
+"""Agent configuration using pydantic-settings + .env."""
 from pathlib import Path
 
 from pydantic import ConfigDict
@@ -8,7 +7,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # OpenRouter (OpenAI-compatible)
-    openrouter_api_key: str
+    openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # Model selection
@@ -34,22 +33,10 @@ class Settings(BaseSettings):
     notify_min_tier: str = "strong"
     notify_webhook_url: str = ""
 
-    # Database / web app
-    database_url: str = ""
-    supabase_url: str = ""
-    supabase_publishable_key: str = ""
-    web_host: str = "127.0.0.1"
-    web_port: int = 8080
-    web_token: str = ""
-    environment: str = "local"
+    # Local database
+    database_url: str = "sqlite:///workspace/tracker/job_agent.db"
 
-    # Public profile
-    public_cv_path: str = "cv_variations/george_emil_aiml_engineer_cv.pdf"
-    public_email: str = ""
-    public_linkedin: str = ""
-    public_github: str = ""
-
-    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Derived paths (not from .env)
     @property
@@ -102,19 +89,14 @@ class Settings(BaseSettings):
 
     @property
     def repo_root(self) -> Path:
+        import sys
+
+        # When running as a PyInstaller bundle, __file__ lives inside the
+        # read-only _internal directory.  Use _MEIPASS (the bundle root) so
+        # seed_workspace can locate the bundled workspace/memory files.
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            return Path(sys._MEIPASS)
         return Path(__file__).resolve().parents[1]
-
-    @property
-    def public_cv_file(self) -> Path:
-        p = Path(self.public_cv_path)
-        if p.is_absolute():
-            return p
-        return self.repo_root / p
-
-    @property
-    def is_production(self) -> bool:
-        env = self.environment.lower()
-        return env in {"production", "prod"} or os.getenv("RENDER", "").lower() == "true"
 
 
 _settings: Settings | None = None

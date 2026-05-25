@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from agent.config import Settings
-from agent.tracker.postgres import PostgresTracker
+from agent.tracker.sql import SqlTracker
 
 
-def get_tracker(settings: Settings) -> PostgresTracker:
+def get_tracker(settings: Settings) -> SqlTracker:
     """Return the live tracker backend."""
-    return PostgresTracker(settings)
+    return SqlTracker(settings)

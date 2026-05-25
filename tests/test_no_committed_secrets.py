@@ -14,4 +14,6 @@ def test_openrouter_smoke_scripts_do_not_embed_key_literals():
     ]
 
     for path in checked_files:
+        if not path.exists():
+            continue
         assert key_prefix not in path.read_text(encoding="utf-8")

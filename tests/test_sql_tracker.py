@@ -1,8 +1,8 @@
-"""Tests for SQL tracker using SQLite as an offline stand-in."""
+"""Tests for the local SQL tracker."""
 
 from agent.config import Settings
 from agent.search.base import JobListing
-from agent.tracker.postgres import PostgresTracker
+from agent.tracker.sql import SqlTracker
 
 
 def _settings(tmp_path):
@@ -22,8 +22,8 @@ def _listing():
     )
 
 
-def test_postgres_tracker_upsert_and_status(tmp_path):
-    tracker = PostgresTracker(_settings(tmp_path))
+def test_sql_tracker_upsert_and_status(tmp_path):
+    tracker = SqlTracker(_settings(tmp_path))
     tracker.load_or_create()
     tracker.upsert_role(
         _listing(),

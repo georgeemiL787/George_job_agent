@@ -1,4 +1,4 @@
-"""SQLAlchemy-backed tracker for Supabase/Postgres."""
+"""SQLAlchemy-backed tracker for local SQLite."""
 from __future__ import annotations
 
 import datetime as dt
@@ -93,8 +93,6 @@ def _parse_date(value: str | dt.date | None) -> dt.date | None:
 
 
 def _normalize_database_url(url: str) -> str:
-    if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url.removeprefix("postgresql://")
     return url
 
 
@@ -106,8 +104,8 @@ def _ensure_sqlite_parent(url: str) -> None:
         Path(raw).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
 
-class PostgresTracker:
-    """Tracker implementation backed by Postgres-compatible SQLAlchemy tables."""
+class SqlTracker:
+    """Tracker implementation backed by local SQLite-compatible SQLAlchemy tables."""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -116,14 +114,14 @@ class PostgresTracker:
     def load_or_create(self) -> None:
         if not self.settings.database_url:
             raise RuntimeError(
-                "DATABASE_URL is required for the Postgres tracker. "
-                "Set it in .env, or use a sqlite:/// URL in tests."
+                "DATABASE_URL is required for the local SQL tracker. "
+                "Use sqlite:///workspace/tracker/job_agent.db for the desktop app."
             )
         url = _normalize_database_url(self.settings.database_url)
         _ensure_sqlite_parent(url)
         self.engine = sa.create_engine(url, future=True)
         metadata.create_all(self.engine)
-        logger.info("Postgres tracker ready")
+        logger.info("Local SQL tracker ready")
 
     def _require_engine(self) -> Engine:
         if self.engine is None:

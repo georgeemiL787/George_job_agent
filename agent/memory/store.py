@@ -31,6 +31,10 @@ class MemoryStore:
         return self._cv_notes_file.read_text(encoding="utf-8")
 
     def load_applications_log(self) -> str:
+        if not self._log_file.exists():
+            self._log_file.parent.mkdir(parents=True, exist_ok=True)
+            self._log_file.write_text("", encoding="utf-8")
+            return ""
         return self._log_file.read_text(encoding="utf-8")
 
     def append_run_summary(self, summary: str) -> None:
