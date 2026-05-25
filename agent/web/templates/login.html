@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Login - George Job Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body class="login-page">
+    <main class="login-shell">
+      <section class="login-panel">
+        <p class="eyebrow">Private dashboard</p>
+        <h1>George Job Agent</h1>
+        <form id="login-form">
+          <label>Admin token <input id="token" type="password" autocomplete="current-password" required autofocus></label>
+          <button type="submit">Sign in</button>
+          <p id="login-error" class="error" role="alert"></p>
+        </form>
+        <a href="/">Back to public profile</a>
+      </section>
+    </main>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const next = params.get("next") || "/admin";
+      document.getElementById("login-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const token = document.getElementById("token").value;
+        const error = document.getElementById("login-error");
+        error.textContent = "";
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token })
+        });
+        if (!response.ok) {
+          error.textContent = "Invalid admin token.";
+          return;
+        }
+        window.location.href = next;
+      });
+    </script>
+  </body>
+</html>

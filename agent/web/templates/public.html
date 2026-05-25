@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>George Emil Sadek | AI/ML Engineer</title>
+    <meta name="description" content="George Emil Sadek, final-year Computer Engineering student focused on applied AI, machine learning, computer vision, LLM apps, and backend deployment.">
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body class="public-page">
+    <header class="public-header">
+      <a class="brand" href="/">George Emil Sadek</a>
+      <nav>
+        <a href="#work">Work</a>
+        <a href="#skills">Skills</a>
+        <a href="/cv/george-emil-sadek.pdf">CV</a>
+        <a href="/login">Admin</a>
+      </nav>
+    </header>
+
+    <main class="public-main">
+      <section class="profile-hero">
+        <div class="profile-copy">
+          <p class="eyebrow">Final-year Computer Engineering student · Cairo, Egypt</p>
+          <h1>Applied AI engineer building LLM, computer vision, and backend systems.</h1>
+          <p class="lead">
+            I work across Python, FastAPI, Docker, PyTorch, TensorFlow, OpenCV, and
+            retrieval-augmented LLM workflows, with a practical focus on shipping
+            AI systems that are easy to run, inspect, and improve.
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="/cv/george-emil-sadek.pdf">Download CV</a>
+            {% if public_linkedin %}<a class="button secondary" href="{{ public_linkedin }}" rel="noopener" target="_blank">LinkedIn</a>{% endif %}
+            {% if public_github %}<a class="button secondary" href="{{ public_github }}" rel="noopener" target="_blank">GitHub</a>{% endif %}
+            {% if public_email %}<a class="button secondary" href="mailto:{{ public_email }}">Email</a>{% endif %}
+          </div>
+        </div>
+        <a class="cv-preview" href="/cv/george-emil-sadek.pdf" aria-label="Download George Emil Sadek CV">
+          <img src="/static/george-cv-preview.png" alt="ATS CV preview for George Emil Sadek">
+        </a>
+      </section>
+
+      <section id="work" class="public-band">
+        <h2>Selected Focus</h2>
+        <div class="profile-grid">
+          <article>
+            <h3>LLM Applications</h3>
+            <p>RAG workflows, prompt engineering, LangChain, LlamaIndex, agentic patterns, and API-backed AI tools.</p>
+          </article>
+          <article>
+            <h3>Computer Vision</h3>
+            <p>Hands-on internship experience at Cellula Technologies plus OpenCV, segmentation, classification, and perception pipelines.</p>
+          </article>
+          <article>
+            <h3>ML Engineering</h3>
+            <p>Model training, evaluation, preprocessing, and deployment with PyTorch, TensorFlow, scikit-learn, Docker, and Linux.</p>
+          </article>
+          <article>
+            <h3>Backend Delivery</h3>
+            <p>FastAPI, Flask, REST APIs, SQL, Git, and practical engineering around deployable AI services.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="skills" class="public-band split">
+        <div>
+          <h2>Project Signals</h2>
+          <p>
+            Student Helper, Rehab Helper, spam detection, CV, NLP, and backend API projects
+            show a bias toward applied systems: useful interfaces, measurable model behavior,
+            and code that can be deployed rather than only demonstrated.
+          </p>
+        </div>
+        <div class="skill-cloud" aria-label="Skills">
+          <span>Python</span><span>SQL</span><span>FastAPI</span><span>Docker</span>
+          <span>Linux</span><span>PyTorch</span><span>TensorFlow</span><span>OpenCV</span>
+          <span>scikit-learn</span><span>RAG</span><span>LangChain</span><span>LlamaIndex</span>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

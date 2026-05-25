@@ -65,7 +65,12 @@ NOTIFY_ENABLED=false
 DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
 WEB_HOST=127.0.0.1
 WEB_PORT=8080
-WEB_TOKEN=
+WEB_TOKEN=your-long-random-admin-token
+ENVIRONMENT=local
+PUBLIC_CV_PATH=cv_variations/george_emil_aiml_engineer_cv.pdf
+PUBLIC_EMAIL=
+PUBLIC_LINKEDIN=
+PUBLIC_GITHUB=
 ```
 
 Copy from `.env.example`. For production runs, prefer stable (often paid) models for `CV_MODEL` and `LETTER_MODEL` to reduce LaTeX/JSON failures.
@@ -149,13 +154,44 @@ The tracker source is `linkedin` when the URL is on linkedin.com; otherwise `man
 
 ## Web UI
 
-Start the local dashboard:
+Start the local site:
 
 ```
 python -m agent web
 ```
 
-Open `http://127.0.0.1:8080`. The web UI includes Dashboard, Roles, Role detail, and Add role pages. It calls the same scoring, tailoring, packaging, and tracker modules as the CLI.
+Open `http://127.0.0.1:8080`. The public root page is George's curated AI/ML engineer profile and CV download. The private job-agent dashboard is under `/admin` and requires `WEB_TOKEN` through `/login`.
+
+The admin UI includes Dashboard, Roles, Role detail, and Add role pages. It calls the same scoring, tailoring, packaging, and tracker modules as the CLI. Do not expose `/admin` without a strong token.
+
+---
+
+## Render Deployment
+
+This repo is intended to remain private while the website can be public. Before deploying, rotate any previously exposed OpenRouter key and set fresh values in Render.
+
+The included `Dockerfile` installs Python dependencies and Playwright Chromium. The included `render.yaml` defines a Docker web service, health check, persistent disk at `/var/data`, and secret env vars with `sync: false`.
+
+Required Render env vars:
+
+```
+OPENROUTER_API_KEY=<fresh rotated key>
+DATABASE_URL=<Supabase Postgres connection string>
+WEB_TOKEN=<long random admin token>
+```
+
+Recommended Render env vars:
+
+```
+WORKSPACE_DIR=/var/data/workspace
+WEB_HOST=0.0.0.0
+ENVIRONMENT=production
+PUBLIC_EMAIL=
+PUBLIC_LINKEDIN=
+PUBLIC_GITHUB=
+```
+
+The app honors Render's `PORT` automatically. On startup it seeds missing `workspace/memory/*` files from the bundled private source data into the persistent workspace.
 
 ---
 

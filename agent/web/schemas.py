@@ -24,3 +24,7 @@ class ScheduleConfig(BaseModel):
 
 class RunRequest(BaseModel):
     dry_run: bool = False
+
+
+class LoginRequest(BaseModel):
+    token: str = Field(min_length=1)

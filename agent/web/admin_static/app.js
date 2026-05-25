@@ -1,9 +1,14 @@
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    credentials: "same-origin",
     ...options
   });
   if (!response.ok) {
+    if (response.status === 401 || response.status === 503) {
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      return;
+    }
     const text = await response.text();
     throw new Error(text || response.statusText);
   }
@@ -21,7 +26,7 @@ function setText(id, value) {
 }
 
 function roleLink(role) {
-  return `<a href="/static/role.html?slug=${encodeURIComponent(role.slug)}">${role.title}</a>`;
+  return `<a href="/admin/role?slug=${encodeURIComponent(role.slug)}">${role.title}</a>`;
 }
 
 function renderRolesTable(target, roles) {
@@ -127,6 +132,11 @@ async function addRole(event) {
   const result = await api("/api/roles", { method: "POST", body: JSON.stringify(body) });
   const slug = result.role?.slug;
   if (slug) {
-    window.location.href = `/static/role.html?slug=${encodeURIComponent(slug)}`;
+    window.location.href = `/admin/role?slug=${encodeURIComponent(slug)}`;
   }
+}
+
+async function logout() {
+  await api("/api/auth/logout", { method: "POST" });
+  window.location.href = "/";
 }

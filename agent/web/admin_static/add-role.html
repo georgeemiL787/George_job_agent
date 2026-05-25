@@ -10,9 +10,11 @@
     <header>
       <h1>George Job Agent</h1>
       <nav>
-        <a href="/static/index.html">Dashboard</a>
-        <a href="/static/roles.html">Roles</a>
-        <a href="/static/add-role.html">Add role</a>
+        <a href="/">Public profile</a>
+        <a href="/admin">Dashboard</a>
+        <a href="/admin/roles">Roles</a>
+        <a href="/admin/add-role">Add role</a>
+        <button class="nav-button" onclick="logout()">Logout</button>
       </nav>
     </header>
     <main>
@@ -36,6 +38,6 @@
         </form>
       </section>
     </main>
-    <script src="/static/app.js"></script>
+    <script src="/admin/app.js"></script>
   </body>
 </html>

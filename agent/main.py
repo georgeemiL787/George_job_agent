@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 import datetime as dt
 from pathlib import Path
@@ -405,11 +406,12 @@ def web() -> None:
     import uvicorn
 
     settings = get_settings()
-    print(f"Starting web UI: http://{settings.web_host}:{settings.web_port}")
+    port = int(os.getenv("PORT", str(settings.web_port)))
+    print(f"Starting web UI: http://{settings.web_host}:{port}")
     uvicorn.run(
         "agent.web.app:app",
         host=settings.web_host,
-        port=settings.web_port,
+        port=port,
         reload=False,
     )
 

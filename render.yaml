@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: george-job-agent
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    disk:
+      name: george-job-agent-workspace
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: WEB_HOST
+        value: 0.0.0.0
+      - key: WORKSPACE_DIR
+        value: /var/data/workspace
+      - key: ENVIRONMENT
+        value: production
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: WEB_TOKEN
+        sync: false
+      - key: PUBLIC_EMAIL
+        sync: false
+      - key: PUBLIC_LINKEDIN
+        sync: false
+      - key: PUBLIC_GITHUB
+        sync: false

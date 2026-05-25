@@ -1,4 +1,5 @@
 """Agent configuration using pydantic-settings + .env"""
+import os
 from pathlib import Path
 
 from pydantic import ConfigDict
@@ -40,6 +41,13 @@ class Settings(BaseSettings):
     web_host: str = "127.0.0.1"
     web_port: int = 8080
     web_token: str = ""
+    environment: str = "local"
+
+    # Public profile
+    public_cv_path: str = "cv_variations/george_emil_aiml_engineer_cv.pdf"
+    public_email: str = ""
+    public_linkedin: str = ""
+    public_github: str = ""
 
     model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -86,11 +94,27 @@ class Settings(BaseSettings):
 
     @property
     def cv_variations_path(self) -> Path:
-        """Historical CV PDF archive at repo root (sibling of workspace/)."""
+        """Historical CV PDF archive bundled at the repo root."""
         p = Path(self.cv_variations_dir)
         if p.is_absolute():
             return p
-        return self.workspace_path.parent / self.cv_variations_dir
+        return self.repo_root / self.cv_variations_dir
+
+    @property
+    def repo_root(self) -> Path:
+        return Path(__file__).resolve().parents[1]
+
+    @property
+    def public_cv_file(self) -> Path:
+        p = Path(self.public_cv_path)
+        if p.is_absolute():
+            return p
+        return self.repo_root / p
+
+    @property
+    def is_production(self) -> bool:
+        env = self.environment.lower()
+        return env in {"production", "prod"} or os.getenv("RENDER", "").lower() == "true"
 
 
 _settings: Settings | None = None
