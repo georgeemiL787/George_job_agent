@@ -1,0 +1,120 @@
+\documentclass[11pt,a4paper]{article}
+
+% --- Packages ---
+\usepackage[top=1.8cm, bottom=1.8cm, left=1.8cm, right=1.8cm]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+% --- No page numbers ---
+\pagestyle{empty}
+
+% --- Section style: bold label + hrule ---
+\newcommand{\cvsection}[1]{%
+  \vspace{4pt}%
+  {\large\bfseries #1}\\[-4pt]%
+  \hrule height 0.6pt%
+  \vspace{4pt}%
+}
+
+% --- Compact bullet list ---
+\setlist[itemize]{leftmargin=*, nosep, topsep=2pt, parsep=0pt, partopsep=0pt}
+
+\begin{document}
+
+% ===== HEADER =====
+\begin{center}
+  {\LARGE\bfseries YOUR NAME HERE}\\[3pt]
+  Cairo, Egypt \quad|\quad
+  \href{mailto:YOUR_EMAIL@example.com}{YOUR\_EMAIL@example.com} \quad|\quad
+  +20-XXX-XXX-XXXX \\
+  \href{https://linkedin.com/in/YOUR_LINKEDIN}{linkedin.com/in/YOUR\_LINKEDIN} \quad|\quad
+  \href{https://github.com/YOUR_GITHUB}{github.com/YOUR\_GITHUB}
+\end{center}
+
+\vspace{2pt}
+
+% ===== SUMMARY =====
+\cvsection{Summary}
+
+% 2-3 sentence professional summary tailored to the specific role.
+% Example: Final-year Computer Engineering student at Benha University with hands-on
+% experience building LLM applications, RAG pipelines, and deployable AI services.
+% Seeking a junior AI engineering role where strong Python, FastAPI, and LangChain skills
+% can contribute to production AI systems.
+
+TAILORED SUMMARY GOES HERE.
+
+% ===== SKILLS =====
+\cvsection{Skills}
+
+\begin{itemize}
+  \item \textbf{Languages:} Python, SQL, C++ (basic), Linux shell
+  \item \textbf{ML/AI Frameworks:} PyTorch, TensorFlow, scikit-learn, OpenCV
+  \item \textbf{LLM/AI Tooling:} LangChain, LlamaIndex, CrewAI, RAG pipelines, prompt engineering
+  \item \textbf{Backend:} FastAPI, Flask, REST APIs
+  \item \textbf{DevOps/Tools:} Docker, Git, Linux
+  \item \textbf{Data:} Pandas, NumPy, SQL
+\end{itemize}
+
+% ===== EXPERIENCE =====
+\cvsection{Experience}
+
+\textbf{Cellula Technologies} \hfill Cairo, Egypt\\
+\textit{Computer Vision Intern} \hfill Oct 2024 -- Jan 2025
+\begin{itemize}
+  \item Developed and trained a teeth disease classification model on medical imaging data using TensorFlow, achieving measurable diagnostic accuracy improvements.
+  \item Built a flood rapid mapping pipeline using optical satellite imagery and image segmentation techniques, enabling faster disaster response analysis.
+  \item Implemented a shoplifting detection system using computer vision and surveillance footage, demonstrating end-to-end applied AI pipeline delivery.
+  \item Collaborated with cross-functional teams and communicated technical findings to non-technical stakeholders.
+\end{itemize}
+
+\vspace{4pt}
+
+\textbf{Elevvo} \hfill Cairo, Egypt\\
+\textit{Machine Learning Engineer (Part-time)} \hfill DATES HERE
+\begin{itemize}
+  \item Applied preprocessing, feature engineering, and scaling techniques across multiple ML datasets.
+  \item Conducted model evaluation experiments with documented results and reproducible pipelines.
+\end{itemize}
+
+% ===== PROJECTS =====
+\cvsection{Projects}
+
+\textbf{Student Helper} --- LLM Application \hfill \textit{Python, LangChain, LlamaIndex}
+\begin{itemize}
+  \item Built an LLM-powered assistant using RAG pipelines and prompt engineering to answer student queries with low latency.
+\end{itemize}
+
+\textbf{Flood Rapid Mapping API} \hfill \textit{FastAPI, Docker, PyTorch, image segmentation}
+\begin{itemize}
+  \item Deployed a REST API for satellite image flood segmentation, containerized with Docker for reproducible inference.
+\end{itemize}
+
+\textbf{Shoplifting Detection System} \hfill \textit{OpenCV, TensorFlow, video analysis}
+\begin{itemize}
+  \item Designed and evaluated a real-time video classification system for retail security with measurable experiment results.
+\end{itemize}
+
+\textbf{Email Spam Detection} \hfill \textit{Python, scikit-learn, Pandas}
+\begin{itemize}
+  \item Trained and evaluated a text classification pipeline achieving high precision on a multi-thousand email dataset.
+\end{itemize}
+
+% ===== EDUCATION =====
+\cvsection{Education}
+
+\textbf{B.Sc. Computer Engineering} \hfill Benha University, Egypt\\
+\textit{Expected graduation: June 2026}
+
+% ===== HIGHLIGHTS =====
+\cvsection{Highlights}
+
+\begin{itemize}
+  \item IEEE student member --- technical leadership, workshop organization, and community engagement.
+  \item Internship recommendation letter from Amjad Bakri (Cellula Technologies, Oct 2025) available on request.
+\end{itemize}
+
+\end{document}

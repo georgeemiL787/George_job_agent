@@ -1,0 +1,159 @@
+"""Indeed Egypt scraper — Playwright headless Chromium."""
+from __future__ import annotations
+
+import random
+import time
+from urllib.parse import urlencode, urljoin
+
+from loguru import logger
+
+from agent.search.base import BaseScraper, JobListing
+
+BASE_URL = "https://eg.indeed.com/jobs"
+MAX_PAGES = 2
+RETRY_LIMIT = 2
+
+
+def _sleep() -> None:
+    time.sleep(1.5 + random.uniform(-0.3, 0.5))
+
+
+class IndeedEgScraper(BaseScraper):
+    SOURCE = "indeed_eg"
+
+    def search(self, queries: list[str], max_results: int = 20) -> list[JobListing]:
+        try:
+            from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+        except ImportError:
+            logger.error(
+                "playwright not installed. Run: python -m playwright install chromium"
+            )
+            return []
+
+        results: list[JobListing] = []
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                )
+            )
+            page = context.new_page()
+
+            for query in queries:
+                if len(results) >= max_results:
+                    break
+
+                for pg_num in range(MAX_PAGES):
+                    if len(results) >= max_results:
+                        break
+
+                    params = {
+                        "q": query,
+                        "l": "Cairo, Egypt",
+                        "start": pg_num * 10,
+                    }
+                    url = BASE_URL + "?" + urlencode(params)
+                    logger.debug(f"Indeed search: {url}")
+
+                    try:
+                        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                        # Wait for job cards
+                        page.wait_for_selector(
+                            "#mosaic-provider-jobcards, .jobsearch-ResultsList, [data-testid='jobsearch-ResultsList']",
+                            timeout=10000,
+                        )
+                    except PWTimeout:
+                        logger.warning(f"Indeed timeout loading page {pg_num} for '{query}'")
+                        break
+                    except Exception as e:
+                        logger.warning(f"Indeed navigation error: {e}")
+                        break
+
+                    _sleep()
+
+                    # Extract job cards
+                    cards = page.query_selector_all(
+                        "div.job_seen_beacon, li.css-5lfssm, div[data-testid='jobCard']"
+                    )
+                    if not cards:
+                        cards = page.query_selector_all(
+                            "div[class*='jobCard'], article[class*='job']"
+                        )
+
+                    if not cards:
+                        logger.debug(f"Indeed: no cards on page {pg_num} for '{query}'")
+                        break
+
+                    for card in cards:
+                        try:
+                            title_el = card.query_selector("h2.jobTitle a, h2 a, [data-testid='jobTitle']")
+                            if not title_el:
+                                continue
+                            title = title_el.inner_text().strip()
+
+                            company_el = card.query_selector(
+                                "span[data-testid='company-name'], .companyName, span.css-1ioi40n"
+                            )
+                            company = company_el.inner_text().strip() if company_el else "Unknown"
+
+                            loc_el = card.query_selector(
+                                "div[data-testid='text-location'], .companyLocation"
+                            )
+                            location = loc_el.inner_text().strip() if loc_el else "Egypt"
+
+                            href = title_el.get_attribute("href") or ""
+                            apply_url = (
+                                href if href.startswith("http")
+                                else urljoin("https://eg.indeed.com", href)
+                            )
+
+                            date_el = card.query_selector("span[data-testid='myJobsStateDate'], .date")
+                            posted_date = date_el.inner_text().strip() if date_el else None
+
+                            # Fetch full description
+                            description = self._fetch_description(page, apply_url)
+
+                            listing = JobListing(
+                                title=title,
+                                company=company,
+                                location=location,
+                                source=self.SOURCE,
+                                apply_url=apply_url,
+                                description=description,
+                                posted_date=posted_date,
+                            )
+                            results.append(listing)
+                            logger.info(f"Indeed: found '{title}' @ {company}")
+
+                            if len(results) >= max_results:
+                                break
+                        except Exception as e:
+                            logger.warning(f"Indeed card parse error: {e}")
+                            continue
+
+            browser.close()
+        return results
+
+    def _fetch_description(self, page, url: str) -> str:
+        from playwright.sync_api import TimeoutError as PWTimeout
+        _sleep()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            page.wait_for_selector(
+                "#jobDescriptionText, div[data-testid='jobsearch-JobComponent-description']",
+                timeout=8000,
+            )
+            desc_el = page.query_selector(
+                "#jobDescriptionText, div[data-testid='jobsearch-JobComponent-description']"
+            )
+            return desc_el.inner_text().strip() if desc_el else ""
+        except PWTimeout:
+            logger.warning(f"Indeed description timeout: {url}")
+            return ""
+        except Exception as e:
+            logger.warning(f"Indeed description error: {e}")
+            return ""

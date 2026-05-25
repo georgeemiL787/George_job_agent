@@ -1,0 +1,28 @@
+.env
+.env.local
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Workspace runtime outputs
+workspace/logs/
+workspace/cv/tailored/
+workspace/cover_letters/
+workspace/packages/
+
+# LaTeX aux
+*.aux
+*.log
+*.out
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Optional: keep tracker in git — uncomment to ignore local tracker state
+# workspace/tracker/*.xlsx
