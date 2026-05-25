@@ -3,41 +3,84 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Role - George Job Agent</title>
+    <title>Role Detail - George Job Agent</title>
     <link rel="stylesheet" href="/static/style.css">
   </head>
-  <body onload="loadRoleDetail()">
-    <header>
-      <h1>George Job Agent</h1>
-      <nav>
-        <a href="/">Public profile</a>
-        <a href="/admin">Dashboard</a>
-        <a href="/admin/roles">Roles</a>
-        <a href="/admin/add-role">Add role</a>
-        <button class="nav-button" onclick="logout()">Logout</button>
-      </nav>
-    </header>
-    <main>
-      <section class="panel">
-        <h2 id="role-title">Role</h2>
-        <div id="role-meta" class="muted"></div>
-        <p><a id="apply-link" href="#" target="_blank" rel="noopener"></a></p>
-        <p id="role-fit"></p>
-        <div class="toolbar">
-          <button onclick="roleAction('tailor')">Tailor CV</button>
-          <button onclick="roleAction('approve')">Approve</button>
-          <button onclick="roleAction('package')">Package</button>
+  <body onload="renderSidebar(); loadRoleDetail();">
+    <div class="mb-4">
+      <a href="/admin/roles" class="text-muted flex items-center gap-2" style="font-size: 0.85rem;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Back to Pipeline
+      </a>
+    </div>
+
+    <div class="role-header">
+      <h1 id="role-title" style="margin-bottom: 8px;">Loading...</h1>
+      <div id="role-meta" class="role-meta-row">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
+    <div class="grid-2 mb-8">
+      <!-- Fit Summary -->
+      <div class="glass-card">
+        <div class="flex items-center gap-2 mb-4">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          <h2 style="font-size: 1.2rem; margin: 0;">AI Fit Analysis</h2>
         </div>
-        <div class="toolbar">
-          <input id="applied-date" type="date">
-          <button class="secondary" onclick="roleAction('mark-applied')">Mark applied</button>
+        <p id="role-fit" class="text-muted" style="white-space: pre-wrap; line-height: 1.6;"></p>
+      </div>
+
+      <!-- Actions -->
+      <div class="glass-card">
+        <h2 style="font-size: 1.2rem; margin-bottom: 24px;">Actions</h2>
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <a id="apply-link" href="#" target="_blank" rel="noopener" class="button ghost" style="justify-content: flex-start; border: 1px solid var(--border-glass);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Apply URL</span>
+          </a>
+          
+          <div class="flex gap-4">
+            <button class="button--primary" onclick="roleAction('tailor')" style="flex: 1;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              Tailor CV
+            </button>
+            <button class="button--primary" onclick="roleAction('approve')" style="flex: 1;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+              Approve
+            </button>
+            <button class="button secondary" onclick="roleAction('package')" style="flex: 1;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              Package
+            </button>
+          </div>
+          
+          <div class="flex gap-4 mt-4 items-end" style="padding-top: 16px; border-top: 1px solid var(--border-glass);">
+            <div style="flex: 1;">
+              <label for="applied-date">Date Applied</label>
+              <input type="date" id="applied-date" style="height: 40px;">
+            </div>
+            <button class="button" style="background: var(--status-success); color: white; border: none; flex: 1; height: 40px;" onclick="roleAction('mark-applied')">
+              Mark Applied
+            </button>
+          </div>
         </div>
-      </section>
-      <section>
-        <h2>Downloads</h2>
-        <div id="downloads" class="toolbar"></div>
-      </section>
-    </main>
+      </div>
+    </div>
+
+    <!-- Artifacts -->
+    <div class="glass-card mb-8">
+      <h2 style="font-size: 1.2rem; margin-bottom: 16px;">Artifact Downloads</h2>
+      <div id="downloads" class="flex gap-4" style="flex-wrap: wrap;">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
+    <script src="/admin/layout.js"></script>
     <script src="/admin/app.js"></script>
+    <script>
+      // Set today's date in the date picker
+      document.getElementById('applied-date').valueAsDate = new Date();
+    </script>
   </body>
 </html>

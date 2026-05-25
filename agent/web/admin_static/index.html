@@ -3,58 +3,126 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>George Job Agent</title>
+    <title>Dashboard - George Job Agent</title>
     <link rel="stylesheet" href="/static/style.css">
   </head>
-  <body onload="loadDashboard()">
-    <header>
-      <h1>George Job Agent</h1>
-      <nav>
-        <a href="/">Public profile</a>
-        <a href="/admin">Dashboard</a>
-        <a href="/admin/roles">Roles</a>
-        <a href="/admin/add-role">Add role</a>
-        <button class="nav-button" onclick="logout()">Logout</button>
-      </nav>
-    </header>
-    <main>
-      <section class="grid">
-        <div class="panel">
-          <h2>Run</h2>
-          <div class="toolbar">
-            <button onclick="runAgent(false)">Run full cycle</button>
-            <button class="secondary" onclick="runAgent(true)">Run dry-run</button>
-          </div>
-          <div class="status-line">Status: <span id="job-status">Loading</span></div>
-        </div>
-        <div class="panel">
-          <h2>Scheduler</h2>
-          <div class="toolbar">
-            <select id="schedule-enabled">
-              <option value="off">Off</option>
-              <option value="on">On</option>
-            </select>
-            <select id="schedule-interval">
-              <option value="1">1 hour</option>
-              <option value="2">2 hours</option>
-              <option value="4">4 hours</option>
-            </select>
-            <button onclick="saveSchedule()">Save</button>
-          </div>
-          <div class="status-line">Next run: <span id="next-run">Loading</span></div>
-        </div>
-      </section>
+  <body onload="renderSidebar(); loadDashboard();">
+    <div class="page-header">
+      <div>
+        <h1 style="font-size: 2rem; margin: 0;">Dashboard</h1>
+        <p class="text-muted" style="margin: 0;">Pipeline overview and control.</p>
+      </div>
+    </div>
 
-      <section class="panel">
-        <h2>Last Run</h2>
-        <div id="scrapers" class="muted">Loading</div>
-      </section>
+    <!-- Stat Tiles -->
+    <div class="stat-grid" id="dashboard-stats">
+      <div class="stat-tile">
+        <div class="stat-tile__label">Total Roles</div>
+        <div class="stat-tile__value" id="stat-total">-</div>
+      </div>
+      <div class="stat-tile glow-warning">
+        <div class="stat-tile__label">Drafts Pending</div>
+        <div class="stat-tile__value" id="stat-drafts">-</div>
+      </div>
+      <div class="stat-tile glow-primary">
+        <div class="stat-tile__label">Ready to Apply</div>
+        <div class="stat-tile__value" id="stat-ready">-</div>
+      </div>
+      <div class="stat-tile glow-success">
+        <div class="stat-tile__label">Applied</div>
+        <div class="stat-tile__value" id="stat-applied">-</div>
+      </div>
+    </div>
 
-      <section>
-        <h2>Top Roles</h2>
-        <div id="top-roles">Loading</div>
-      </section>
-    </main>
+    <div class="grid-2 mb-8">
+      <!-- Run Panel -->
+      <div class="glass-card" style="display: flex; flex-direction: column; justify-content: center;">
+        <h2 style="font-size: 1.2rem; margin-bottom: 24px;">Agent Execution</h2>
+        <div class="run-panel glass" style="border-radius: var(--radius-md);">
+          <div class="run-actions">
+            <button class="button--primary run-btn--large" onclick="runAgent(false)" id="run-full-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Run Full Cycle
+            </button>
+            <button class="ghost run-btn--large" onclick="runAgent(true)" id="run-dry-btn" style="border: 1px solid var(--border-glass);">
+              Dry Run
+            </button>
+          </div>
+          <div class="run-status-indicator mt-4" id="run-status-container">
+            <span id="job-status" class="text-muted" style="font-weight: 500;">Idle</span>
+            <span id="job-timer" class="text-muted" style="font-family: monospace; font-size: 0.9rem; margin-left: 8px;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scheduler & Last Run -->
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+        <div class="glass-card">
+          <h2 style="font-size: 1.2rem; margin-bottom: 16px;">Scheduler</h2>
+          <div class="flex gap-4 items-center mb-4">
+            <div style="flex: 1;">
+              <label for="schedule-enabled">Status</label>
+              <select id="schedule-enabled">
+                <option value="off">Off</option>
+                <option value="on">On</option>
+              </select>
+            </div>
+            <div style="flex: 1;">
+              <label for="schedule-interval">Interval</label>
+              <select id="schedule-interval">
+                <option value="1">1 hour</option>
+                <option value="2">2 hours</option>
+                <option value="4">4 hours</option>
+              </select>
+            </div>
+            <div style="align-self: flex-end;">
+              <button onclick="saveSchedule()" class="button--primary" style="height: 40px;">Save</button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-muted" style="font-size: 0.85rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            Next run: <span id="next-run" style="font-weight: 600; color: var(--text-main);">Loading</span>
+          </div>
+        </div>
+
+        <div class="glass-card" style="flex-grow: 1;">
+          <h2 style="font-size: 1.2rem; margin-bottom: 16px;">Scraper Health</h2>
+          <div id="scrapers" style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="text-muted">Loading</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Roles -->
+    <div class="glass-card" style="padding: 0; overflow: hidden;">
+      <div style="padding: 20px 24px; border-bottom: 1px solid var(--border-glass); display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="font-size: 1.2rem; margin: 0;">Top Pipeline Candidates</h2>
+        <a href="/admin/roles" class="text-muted" style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px;">
+          View all
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+      <div style="overflow-x: auto;">
+        <table id="top-roles-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Company</th>
+              <th>Role</th>
+              <th>Score</th>
+              <th>Tier</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="top-roles">
+            <tr><td colspan="6" class="text-muted text-center" style="padding: 24px; text-align: center;">Loading data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script src="/admin/layout.js"></script>
     <script src="/admin/app.js"></script>
   </body>
 </html>

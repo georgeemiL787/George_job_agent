@@ -6,38 +6,68 @@
     <title>Add Role - George Job Agent</title>
     <link rel="stylesheet" href="/static/style.css">
   </head>
-  <body>
-    <header>
-      <h1>George Job Agent</h1>
-      <nav>
-        <a href="/">Public profile</a>
-        <a href="/admin">Dashboard</a>
-        <a href="/admin/roles">Roles</a>
-        <a href="/admin/add-role">Add role</a>
-        <button class="nav-button" onclick="logout()">Logout</button>
-      </nav>
-    </header>
-    <main>
-      <section>
-        <h2>Add Role</h2>
-        <form class="grid" onsubmit="addRole(event)">
-          <label>Title <input name="title" required></label>
-          <label>Company <input name="company" required></label>
-          <label>Location <input name="location"></label>
-          <label>Source
-            <select name="source">
-              <option value="manual">manual</option>
-              <option value="linkedin">linkedin</option>
-            </select>
-          </label>
-          <label>Apply URL <input name="apply_url" required></label>
-          <label style="grid-column: 1 / -1;">Description <textarea name="description" required></textarea></label>
-          <div class="toolbar">
-            <button type="submit">Process role</button>
+  <body onload="renderSidebar()">
+    <div class="page-header">
+      <div>
+        <h1 style="font-size: 2rem; margin: 0;">Add Role</h1>
+        <p class="text-muted" style="margin: 0;">Manually inject a LinkedIn or direct-apply role into the pipeline.</p>
+      </div>
+    </div>
+
+    <div class="glass-card" style="max-width: 800px;">
+      <form id="add-role-form" onsubmit="addRole(event)" style="display: flex; flex-direction: column; gap: 20px;">
+        <div class="grid-2" style="gap: 20px;">
+          <div>
+            <label for="title">Job Title <span style="color: var(--status-error);">*</span></label>
+            <input id="title" name="title" required placeholder="e.g. Senior AI Engineer">
           </div>
-        </form>
-      </section>
-    </main>
+          <div>
+            <label for="company">Company <span style="color: var(--status-error);">*</span></label>
+            <input id="company" name="company" required placeholder="e.g. OpenAI">
+          </div>
+        </div>
+
+        <div class="grid-2" style="gap: 20px;">
+          <div>
+            <label for="location">Location</label>
+            <input id="location" name="location" placeholder="e.g. Cairo (Remote)">
+          </div>
+          <div>
+            <label for="apply_url">Apply URL <span style="color: var(--status-error);">*</span></label>
+            <input id="apply_url" name="apply_url" type="url" required placeholder="https://...">
+          </div>
+        </div>
+
+        <div>
+          <label for="description">Full Job Description <span style="color: var(--status-error);">*</span></label>
+          <textarea id="description" name="description" required placeholder="Paste the complete JD here..." style="min-height: 300px; font-family: monospace; font-size: 0.85rem;"></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border-glass);">
+          <button type="submit" class="button--primary" id="submit-btn" style="min-width: 150px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Add Role
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <script src="/admin/layout.js"></script>
     <script src="/admin/app.js"></script>
+    <script>
+      const originalAddRole = window.addRole;
+      window.addRole = async function(event) {
+        const btn = document.getElementById('submit-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="pulse-dot" width="16" height="16" viewBox="0 0 24 24"></svg> Processing...';
+        try {
+          await originalAddRole(event);
+        } catch (e) {
+          showToast('Failed to add role', 'error');
+          btn.disabled = false;
+          btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add Role';
+        }
+      };
+    </script>
   </body>
 </html>
