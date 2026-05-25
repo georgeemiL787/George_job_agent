@@ -4,10 +4,7 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
-    disk:
-      name: george-job-agent-workspace
-      mountPath: /var/data
-      sizeGB: 1
+    plan: free
     envVars:
       - key: WEB_HOST
         value: 0.0.0.0
@@ -22,8 +19,8 @@ services:
       - key: WEB_TOKEN
         sync: false
       - key: PUBLIC_EMAIL
-        sync: false
+        value: george.emil72@gmail.com
       - key: PUBLIC_LINKEDIN
-        sync: false
+        value: https://www.linkedin.com/in/george-emil/
       - key: PUBLIC_GITHUB
-        sync: false
+        value: https://github.com/georgeemiL787
