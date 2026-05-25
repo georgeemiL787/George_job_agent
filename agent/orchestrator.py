@@ -15,14 +15,22 @@ from agent.observability.run_report import RunReport, ScraperStat, write_run_rep
 from agent.scoring.scorer import SEARCH_QUERIES, score_listing
 from agent.search.base import JobListing
 from agent.search.deduplicator import deduplicate
-from agent.tracker.workbook import TrackerWorkbook
+from agent.tracker import get_tracker
+
+
+def _scraper_stat(scraper, count: int) -> ScraperStat:
+    status = getattr(scraper, "health_status", "")
+    message = getattr(scraper, "health_message", "")
+    if not status:
+        status = "ok" if count else "empty"
+    return ScraperStat(count=count, status=status, message=message)
 
 
 def _collect_all_listings(settings: Settings) -> tuple[list[JobListing], dict[str, ScraperStat]]:
     """Run all scrapers; return listings and per-source stats."""
-    from agent.search.wuzzuf import WuzzufScraper
     from agent.search.bayt import BaytScraper
     from agent.search.tanqeeb import TanqeebScraper
+    from agent.search.wuzzuf import WuzzufScraper
 
     all_listings: list[JobListing] = []
     stats: dict[str, ScraperStat] = {}
@@ -39,10 +47,15 @@ def _collect_all_listings(settings: Settings) -> tuple[list[JobListing], dict[st
             found = scraper.search(SEARCH_QUERIES, max_results=max_per_source)
             logger.info(f"{scraper.SOURCE}: collected {len(found)} listings")
             all_listings.extend(found)
-            stats[scraper.SOURCE] = ScraperStat(count=len(found))
+            stats[scraper.SOURCE] = _scraper_stat(scraper, len(found))
         except Exception as e:
             logger.warning(f"{scraper.SOURCE} scraper error (skipping): {e}")
-            stats[scraper.SOURCE] = ScraperStat(count=0, error=str(e))
+            stats[scraper.SOURCE] = ScraperStat(
+                count=0,
+                status="error",
+                message=str(e),
+                error=str(e),
+            )
 
     try:
         from agent.search.indeed_eg import IndeedEgScraper
@@ -51,10 +64,15 @@ def _collect_all_listings(settings: Settings) -> tuple[list[JobListing], dict[st
         found = indeed.search(SEARCH_QUERIES, max_results=max_per_source)
         logger.info(f"indeed_eg: collected {len(found)} listings")
         all_listings.extend(found)
-        stats["indeed_eg"] = ScraperStat(count=len(found))
+        stats["indeed_eg"] = _scraper_stat(indeed, len(found))
     except Exception as e:
         logger.warning(f"indeed_eg scraper error (skipping): {e}")
-        stats["indeed_eg"] = ScraperStat(count=0, error=str(e))
+        stats["indeed_eg"] = ScraperStat(
+            count=0,
+            status="error",
+            message=str(e),
+            error=str(e),
+        )
 
     return all_listings, stats
 
@@ -105,7 +123,7 @@ def run(manual: bool = False, dry_run: bool = False) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
     memory = MemoryStore(settings)
-    tracker = TrackerWorkbook(settings)
+    tracker = get_tracker(settings)
     tracker.load_or_create()
 
     logger.info("Step 1: Searching all sources...")
@@ -146,6 +164,11 @@ def run(manual: bool = False, dry_run: bool = False) -> None:
                 f"  [{result['tier']:8}] {result['score']:3}/100 "
                 f"{listing.company:25} -- {listing.title}"
             )
+        write_run_report(report, settings)
+        return
+
+    if not scored:
+        logger.info("No scored roles to track or tailor. Run complete.")
         write_run_report(report, settings)
         return
 

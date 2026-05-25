@@ -1515,3 +1515,21 @@ Current top apply-next roles after the 2026-05-07 22:15 Africa/Cairo refresh:
   - Source: Wuzzuf
   - Status: Strong current full-time target
   - Notes: Realistic 0-3 year band with clear overlap in Python, ML, deployment basics, and communication.
+
+## Manual add 2026-05-25 19:49 Africa/Cairo
+
+- **Demo Tech Cairo** — AI Engineer Intern
+  - Source: linkedin
+  - Score: 92/100 [top]
+  - Location: Cairo, Egypt
+  - Apply: https://www.linkedin.com/jobs/view/demo-ai-intern
+  - Slug: `demo-tech-cairo-ai-engineer-intern-linkedin`
+
+## 2026-05-25 20:01 Africa/Cairo
+
+Run completed at 2026-05-25 20:01 Africa/Cairo
+Total roles scored: 0
+CVs tailored: 0
+Cover letters written: 0
+
+Top roles this run:

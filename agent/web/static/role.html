@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Role - George Job Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body onload="loadRoleDetail()">
+    <header>
+      <h1>George Job Agent</h1>
+      <nav>
+        <a href="/static/index.html">Dashboard</a>
+        <a href="/static/roles.html">Roles</a>
+        <a href="/static/add-role.html">Add role</a>
+      </nav>
+    </header>
+    <main>
+      <section class="panel">
+        <h2 id="role-title">Role</h2>
+        <div id="role-meta" class="muted"></div>
+        <p><a id="apply-link" href="#" target="_blank" rel="noopener"></a></p>
+        <p id="role-fit"></p>
+        <div class="toolbar">
+          <button onclick="roleAction('tailor')">Tailor CV</button>
+          <button onclick="roleAction('approve')">Approve</button>
+          <button onclick="roleAction('package')">Package</button>
+        </div>
+        <div class="toolbar">
+          <input id="applied-date" type="date">
+          <button class="secondary" onclick="roleAction('mark-applied')">Mark applied</button>
+        </div>
+      </section>
+      <section>
+        <h2>Downloads</h2>
+        <div id="downloads" class="toolbar"></div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

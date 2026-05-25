@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>George Job Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body onload="loadDashboard()">
+    <header>
+      <h1>George Job Agent</h1>
+      <nav>
+        <a href="/static/index.html">Dashboard</a>
+        <a href="/static/roles.html">Roles</a>
+        <a href="/static/add-role.html">Add role</a>
+      </nav>
+    </header>
+    <main>
+      <section class="grid">
+        <div class="panel">
+          <h2>Run</h2>
+          <div class="toolbar">
+            <button onclick="runAgent(false)">Run full cycle</button>
+            <button class="secondary" onclick="runAgent(true)">Run dry-run</button>
+          </div>
+          <div class="status-line">Status: <span id="job-status">Loading</span></div>
+        </div>
+        <div class="panel">
+          <h2>Scheduler</h2>
+          <div class="toolbar">
+            <select id="schedule-enabled">
+              <option value="off">Off</option>
+              <option value="on">On</option>
+            </select>
+            <select id="schedule-interval">
+              <option value="1">1 hour</option>
+              <option value="2">2 hours</option>
+              <option value="4">4 hours</option>
+            </select>
+            <button onclick="saveSchedule()">Save</button>
+          </div>
+          <div class="status-line">Next run: <span id="next-run">Loading</span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Last Run</h2>
+        <div id="scrapers" class="muted">Loading</div>
+      </section>
+
+      <section>
+        <h2>Top Roles</h2>
+        <div id="top-roles">Loading</div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

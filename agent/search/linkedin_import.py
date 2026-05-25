@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from agent.search.base import JobListing
 
+
 def _is_linkedin_host(host: str) -> bool:
     host = host.lower().removeprefix("www.")
     return host == "linkedin.com" or host.endswith(".linkedin.com")

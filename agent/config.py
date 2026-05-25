@@ -1,7 +1,8 @@
 """Agent configuration using pydantic-settings + .env"""
-from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
 from pathlib import Path
+
+from pydantic import ConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -31,6 +32,14 @@ class Settings(BaseSettings):
     notify_enabled: bool = False
     notify_min_tier: str = "strong"
     notify_webhook_url: str = ""
+
+    # Database / web app
+    database_url: str = ""
+    supabase_url: str = ""
+    supabase_publishable_key: str = ""
+    web_host: str = "127.0.0.1"
+    web_port: int = 8080
+    web_token: str = ""
 
     model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -66,6 +75,10 @@ class Settings(BaseSettings):
     @property
     def packages_path(self) -> Path:
         return self.workspace_path / "packages"
+
+    @property
+    def config_path(self) -> Path:
+        return self.workspace_path / "config"
 
     @property
     def runs_log_path(self) -> Path:

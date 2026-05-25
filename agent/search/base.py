@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import datetime
-from datetime import timezone
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import timezone
 from typing import Optional
 
 

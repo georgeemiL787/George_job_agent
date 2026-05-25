@@ -1,13 +1,15 @@
 # George's Local AI Job Search Agent
 
-A local Python CLI agent that automates the AI/ML job search workflow for George Emil Sadek. Searches Egyptian job boards, scores roles against the candidate profile, tailors a unique ATS-optimized CV for every strong match, writes a professional cover letter, and tracks everything in Excel.
+A local Python CLI agent and web app that automates the AI/ML job search workflow for George Emil Sadek. Searches Egyptian job boards, scores roles against the candidate profile, tailors a unique ATS-optimized CV for every strong match, writes a professional cover letter, and tracks roles in Supabase PostgreSQL.
+
+The current build includes the `NEXT_PLAN.md` implementation: Postgres tracker, local FastAPI web UI, configurable scheduler, and on-demand Excel export.
 
 ---
 
 ## Prerequisites
 
 - Python 3.11 or later
-- TeX Live or MiKTeX (for PDF compilation). Without this, CVs are saved as .tex only.
+- TeX Live or MiKTeX is optional. Without `pdflatex`, CVs and cover letters are saved as `.tex` only.
 - Playwright Chromium (for Indeed Egypt scraper)
 
 Check Python version:
@@ -19,6 +21,7 @@ Check pdflatex:
 ```
 pdflatex --version
 ```
+If this command is unavailable, the agent still runs and writes `.tex` artifacts; install MiKTeX or TeX Live later when you need PDFs.
 
 ---
 
@@ -47,7 +50,7 @@ copy .env.example .env
 
 Edit `.env`:
 ```
-OPENROUTER_API_KEY=sk-or-v1-your-key-here
+OPENROUTER_API_KEY=your-openrouter-api-key-here
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 SCORING_MODEL=nvidia/nemotron-3-super-120b-a12b:free
 CV_MODEL=nvidia/nemotron-3-super-120b-a12b:free
@@ -59,6 +62,10 @@ LATEX_BIN=pdflatex
 LOG_LEVEL=INFO
 MIN_SCORE_TO_TAILOR=60
 NOTIFY_ENABLED=false
+DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
+WEB_HOST=127.0.0.1
+WEB_PORT=8080
+WEB_TOKEN=
 ```
 
 Copy from `.env.example`. For production runs, prefer stable (often paid) models for `CV_MODEL` and `LETTER_MODEL` to reduce LaTeX/JSON failures.
@@ -100,6 +107,9 @@ python -m agent run
 | `python -m agent mark-applied <slug>` | Mark a role as applied in tracker |
 | `python -m agent schedule` | Start the 4-hour background scheduler |
 | `python -m agent status --drafts` | Show Draft roles awaiting review |
+| `python -m agent web` | Start the local web UI and API |
+| `python -m agent import-tracker` | Import the existing Excel tracker into Postgres |
+| `python -m agent export-tracker` | Export Postgres tracker rows to Excel |
 
 ---
 
@@ -137,40 +147,60 @@ The tracker source is `linkedin` when the URL is on linkedin.com; otherwise `man
 
 ---
 
+## Web UI
+
+Start the local dashboard:
+
+```
+python -m agent web
+```
+
+Open `http://127.0.0.1:8080`. The web UI includes Dashboard, Roles, Role detail, and Add role pages. It calls the same scoring, tailoring, packaging, and tracker modules as the CLI.
+
+---
+
 ## Starting the Scheduler
 
-The scheduler runs a full cycle every 4 hours in Africa/Cairo timezone:
+The CLI scheduler runs a full cycle every 4 hours in `Africa/Cairo` timezone (configurable via `SCHEDULE_INTERVAL_HOURS` in `.env`):
+
 ```
 python -m agent schedule
 ```
 
-It runs once immediately on startup, then every 4 hours. Press Ctrl+C to stop.
+It runs once immediately on startup, then on the interval. Press Ctrl+C to stop.
+
+The web dashboard also controls a background scheduler with Off / 1h / 2h / 4h options stored in `workspace/config/schedule.json`.
 
 ---
 
-## Tracker File
+## Tracker
 
-The Excel tracker is saved at:
+Live tracker state is stored in Postgres through `DATABASE_URL`. Import the existing workbook once:
+
 ```
-workspace/tracker/george_emil_job_tracker.xlsx
+python -m agent import-tracker
 ```
 
-Open it in Excel or LibreOffice. Three sheets:
-- **Pipeline** - all open roles, ranked by score, yellow apply links
-- **Applied** - archived after you confirm application
-- **Log** - every agent action timestamped
+Generate an Excel copy when needed:
+
+```
+python -m agent export-tracker
+```
+
+The Excel file remains useful for viewing/export, but it is no longer the live source of truth.
 
 ---
+
 
 ## Output Files
 
 | Path | Contents |
 |---|---|
 | `workspace/cv/tailored/<slug>.tex` | Tailored LaTeX CV for one role |
-| `workspace/cv/tailored/<slug>.pdf` | Compiled PDF (if pdflatex installed) |
+| `workspace/cv/tailored/<slug>.pdf` | Compiled PDF (only when pdflatex is installed) |
 | `workspace/cover_letters/<slug>_letter.tex` | Cover letter LaTeX |
-| `workspace/cover_letters/<slug>_letter.pdf` | Cover letter PDF |
-| `workspace/tracker/george_emil_job_tracker.xlsx` | Excel tracker |
+| `workspace/cover_letters/<slug>_letter.pdf` | Cover letter PDF (only when pdflatex is installed) |
+| `workspace/tracker/george_emil_job_tracker.xlsx` | Optional Excel export from Postgres |
 | `workspace/logs/agent.log` | Full agent log |
 | `workspace/memory/cv-facts.md` | Core CV facts (sent to LLM) |
 | `workspace/memory/cv-role-playbook.md` | Company/role tailoring notes |
@@ -226,4 +256,5 @@ The master CV at `workspace/cv/master/george_master.tex` is never submitted dire
 - The agent never invents qualifications, employers, or metrics
 - An application is only marked applied when you confirm it with `mark-applied`
 - Existing applied/interviewed rows in the tracker are never overwritten
-- Cover letters are always compiled to PDF
+- PDFs are optional; `.tex` artifacts are valid output when `pdflatex` is unavailable
+- Database credentials stay in `.env` only — never in the repository

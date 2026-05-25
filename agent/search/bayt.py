@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import random
 import time
-from urllib.parse import urljoin, quote_plus
+from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup
@@ -26,6 +26,10 @@ MAX_PAGES = 3
 RETRY_LIMIT = 3
 
 
+class ScraperBlocked(Exception):
+    """Raised when Bayt blocks automated access."""
+
+
 def _sleep() -> None:
     time.sleep(1.2 + random.uniform(-0.3, 0.4))
 
@@ -40,6 +44,8 @@ def _get_with_retry(client: httpx.Client, url: str) -> httpx.Response | None:
                 time.sleep(delay)
                 delay *= 2
                 continue
+            if resp.status_code == 403:
+                raise ScraperBlocked("HTTP 403 Forbidden")
             if resp.status_code == 404:
                 return None
             resp.raise_for_status()
@@ -82,6 +88,8 @@ class BaytScraper(BaseScraper):
     SOURCE = "bayt"
 
     def search(self, queries: list[str], max_results: int = 20) -> list[JobListing]:
+        self.health_status = "empty"
+        self.health_message = ""
         results: list[JobListing] = []
         with httpx.Client() as client:
             for query in queries:
@@ -101,7 +109,13 @@ class BaytScraper(BaseScraper):
 
                     logger.debug(f"Bayt search: {url}")
                     _sleep()
-                    resp = _get_with_retry(client, url)
+                    try:
+                        resp = _get_with_retry(client, url)
+                    except ScraperBlocked as e:
+                        self.health_status = "blocked"
+                        self.health_message = str(e)
+                        logger.warning(f"Bayt blocked: {e}")
+                        return results
                     if not resp:
                         break
 
@@ -159,4 +173,6 @@ class BaytScraper(BaseScraper):
                         except Exception as e:
                             logger.warning(f"Bayt card parse error: {e}")
                             continue
+        if results and self.health_status != "blocked":
+            self.health_status = "ok"
         return results

@@ -10,8 +10,6 @@ from loguru import logger
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.filters import AutoFilter
-from openpyxl.worksheet.views import SheetView, Pane
 
 from agent.config import Settings
 from agent.search.base import JobListing
@@ -94,7 +92,6 @@ class TrackerWorkbook:
         """Return 1-based row index in Pipeline sheet, or None."""
         for row in self._pipeline.iter_rows(min_row=2, values_only=False):
             notes_cell = row[14]   # col O = Notes (0-indexed 14)
-            slug_cell  = row[14]   # we store slug in Notes col for lookup
             # Slug is stored as a hidden marker in column O or we match via company+title
             # We use a hidden slug marker format: "slug:<value>" appended to Notes
             if notes_cell.value and f"slug:{slug}" in str(notes_cell.value):

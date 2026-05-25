@@ -13,6 +13,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: ruff check agent tests
+      - run: pip install pip-audit
+      - run: ruff check .
+      - run: pip check
+      - run: pip-audit -r requirements.txt
       - run: python -m pytest tests/ -q --ignore=tests/test_orchestrator.py
       - run: python -m pytest tests/test_orchestrator.py -q

@@ -1,9 +1,8 @@
 """PDF artifact validation."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import shutil
+from pathlib import Path
 
 
 def validate_pdf(

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Add Role - George Job Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <header>
+      <h1>George Job Agent</h1>
+      <nav>
+        <a href="/static/index.html">Dashboard</a>
+        <a href="/static/roles.html">Roles</a>
+        <a href="/static/add-role.html">Add role</a>
+      </nav>
+    </header>
+    <main>
+      <section>
+        <h2>Add Role</h2>
+        <form class="grid" onsubmit="addRole(event)">
+          <label>Title <input name="title" required></label>
+          <label>Company <input name="company" required></label>
+          <label>Location <input name="location"></label>
+          <label>Source
+            <select name="source">
+              <option value="manual">manual</option>
+              <option value="linkedin">linkedin</option>
+            </select>
+          </label>
+          <label>Apply URL <input name="apply_url" required></label>
+          <label style="grid-column: 1 / -1;">Description <textarea name="description" required></textarea></label>
+          <div class="toolbar">
+            <button type="submit">Process role</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

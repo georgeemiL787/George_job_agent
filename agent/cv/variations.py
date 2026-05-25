@@ -1,8 +1,6 @@
 """Index of historical CV PDFs in cv_variations/ for tailoring context."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from agent.config import Settings
 
 # Filename hints for LLM context when cv-variations.md is missing

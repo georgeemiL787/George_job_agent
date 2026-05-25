@@ -1,11 +1,11 @@
 """Tests for the scoring module."""
 import json
-import pytest
 from unittest.mock import MagicMock, patch
 
-from agent.search.base import JobListing
-from agent.scoring.scorer import score_listing
+import pytest
 
+from agent.scoring.scorer import score_listing
+from agent.search.base import JobListing
 
 MOCK_SCORE_RESPONSE = json.dumps({
     "score": 78,

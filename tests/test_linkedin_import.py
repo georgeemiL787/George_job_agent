@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from agent.search.linkedin_import import (
-    RoleDraft,
     detect_source_from_url,
     draft_to_listing,
     load_role_file,

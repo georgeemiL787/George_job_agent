@@ -1,7 +1,6 @@
 """Optional post-run notifications."""
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 

@@ -14,6 +14,8 @@ from agent.config import Settings
 @dataclass
 class ScraperStat:
     count: int = 0
+    status: str = "ok"
+    message: str = ""
     error: str | None = None
 
 

@@ -5,20 +5,20 @@ import shutil
 from pathlib import Path
 
 from agent.config import Settings
-from agent.tracker.workbook import TrackerWorkbook
+from agent.tracker import get_tracker
 
 
 def package_role(slug: str, settings: Settings) -> Path:
-    tracker = TrackerWorkbook(settings)
+    tracker = get_tracker(settings)
     tracker.load_or_create()
-    row = tracker.get_row_by_slug(slug)
-    if not row:
+    role = tracker.get_row_by_slug(slug)
+    if not role:
         raise ValueError(f"Slug not found in tracker: {slug}")
 
-    company = str(row[1] or "")
-    title = str(row[2] or "")
-    apply_url = str(row[9] or "")
-    fit = str(row[8] or "")
+    company = role.company
+    title = role.title
+    apply_url = role.apply_url
+    fit = role.fit_summary
 
     out_dir = settings.packages_path / slug
     if out_dir.exists():

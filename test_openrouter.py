@@ -2,22 +2,24 @@
 Test OpenRouter API connectivity using the openai Python SDK
 (OpenRouter is fully OpenAI-compatible).
 """
-import sys
 import io
+import os
+import sys
 
-# Force UTF-8 output so Unicode chars print correctly on Windows
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
-import importlib, subprocess
-try:
-    importlib.import_module("openai")
-except ModuleNotFoundError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "openai"])
-
+from dotenv import load_dotenv
 from openai import OpenAI
 
-OPENROUTER_API_KEY = "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"
+# Force UTF-8 output so Unicode chars print correctly on Windows
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+load_dotenv()
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+
+if not OPENROUTER_API_KEY:
+    print("OPENROUTER_API_KEY is missing. Add it to .env or your environment.")
+    raise SystemExit(1)
 
 client = OpenAI(
     api_key=OPENROUTER_API_KEY,
@@ -48,7 +50,7 @@ for chunk in stream:
         response_text += content
         print(content, end="", flush=True)
     if hasattr(chunk, "usage") and chunk.usage:
-        print(f"\n\n--- Usage ---")
+        print("\n\n--- Usage ---")
         print(f"Prompt tokens:     {chunk.usage.prompt_tokens}")
         print(f"Completion tokens: {chunk.usage.completion_tokens}")
         print(f"Total tokens:      {chunk.usage.total_tokens}")

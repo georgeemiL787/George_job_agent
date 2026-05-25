@@ -1,7 +1,7 @@
 """Tests for the tracker workbook."""
-import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
 
 from agent.search.base import JobListing
 from agent.tracker.workbook import TrackerWorkbook

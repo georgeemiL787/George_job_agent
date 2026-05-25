@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Roles - George Job Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body onload="loadRoles()">
+    <header>
+      <h1>George Job Agent</h1>
+      <nav>
+        <a href="/static/index.html">Dashboard</a>
+        <a href="/static/roles.html">Roles</a>
+        <a href="/static/add-role.html">Add role</a>
+      </nav>
+    </header>
+    <main>
+      <section>
+        <h2>Roles</h2>
+        <div class="toolbar">
+          <label><input id="drafts-only" type="checkbox" onchange="loadRoles()"> Drafts only</label>
+          <label><input id="include-applied" type="checkbox" onchange="loadRoles()"> Include applied</label>
+        </div>
+        <div id="roles-table">Loading</div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -9,7 +9,7 @@ from agent.cv.master_cv import load_master_cv_facts
 from agent.memory.store import MemoryStore
 from agent.scoring.scorer import score_listing
 from agent.search.base import JobListing
-from agent.tracker.workbook import TrackerWorkbook
+from agent.tracker import get_tracker
 
 
 def process_manual_role(listing: JobListing, settings: Settings) -> dict:
@@ -20,7 +20,7 @@ def process_manual_role(listing: JobListing, settings: Settings) -> dict:
     logger.info(f"Scoring manual role: {listing.company} — {listing.title}")
     result = score_listing(listing, profile, settings)
 
-    tracker = TrackerWorkbook(settings)
+    tracker = get_tracker(settings)
     tracker.load_or_create()
     tracker.upsert_role(listing, result)
 

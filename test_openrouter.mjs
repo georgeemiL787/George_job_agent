@@ -1,8 +1,36 @@
 import OpenAI from "openai";
+import { readFileSync } from "node:fs";
+
+function loadEnvValue(name) {
+  if (process.env[name]) {
+    return process.env[name].trim();
+  }
+
+  try {
+    const envText = readFileSync(".env", "utf8");
+    for (const line of envText.split(/\r?\n/)) {
+      const match = line.match(/^\s*([^#=\s]+)\s*=\s*(.*)\s*$/);
+      if (match?.[1] === name) {
+        return match[2].replace(/^["']|["']$/g, "").trim();
+      }
+    }
+  } catch {
+    // Missing .env is fine; the caller prints a clear error below.
+  }
+
+  return "";
+}
+
+const apiKey = loadEnvValue("OPENROUTER_API_KEY");
+
+if (!apiKey) {
+  console.error("OPENROUTER_API_KEY is missing. Add it to .env or your environment.");
+  process.exit(1);
+}
 
 // OpenRouter is OpenAI-compatible — use openai SDK with base_url override
 const client = new OpenAI({
-  apiKey: "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",
+  apiKey,
   baseURL: "https://openrouter.ai/api/v1",
   defaultHeaders: {
     "HTTP-Referer": "https://github.com/george-job-agent",

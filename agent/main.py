@@ -1,9 +1,14 @@
 """Typer CLI entry point for the job agent."""
 from __future__ import annotations
 
-import sys
 import io
+import sys
+import datetime as dt
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agent.search.linkedin_import import RoleDraft
 
 # Force UTF-8 on Windows console
 if sys.platform == "win32":
@@ -53,78 +58,64 @@ def status(
     """Print top roles from the tracker and last scraper run health."""
     _setup_logging()
     from agent.observability.run_report import load_latest_run_report
-    from agent.tracker.workbook import TrackerWorkbook
+    from agent.tracker import get_tracker
 
     settings = get_settings()
-    tracker = TrackerWorkbook(settings)
+    tracker = get_tracker(settings)
     tracker.load_or_create()
-    ws = tracker._pipeline
 
     latest = load_latest_run_report(settings)
     if latest:
         print("\nLast run scrapers:")
         for name, stat in latest.get("scrapers", {}).items():
             err = stat.get("error")
-            print(f"  {name}: {stat.get('count', 0)} listings" + (f" ERROR: {err}" if err else ""))
+            count = stat.get("count", 0)
+            status = stat.get("status") or ("error" if err else ("ok" if count else "empty"))
+            message = stat.get("message") or err
+            detail = f" - {message}" if message else ""
+            print(f"  {name}: {count} listings [{status}]{detail}")
 
     print(f"\n{'Rank':>4}  {'Score':>5}  {'Tier':8}  {'Status':12}  {'Company':20}  Role")
     print("-" * 90)
-    rows = list(ws.iter_rows(min_row=2, values_only=True))
-    rows = [r for r in rows if r[0] is not None]
-    rows.sort(key=lambda r: r[5] or 0, reverse=True)
+    rows = tracker.list_pipeline_rows(drafts_only=drafts_only, include_applied=False)
     for row in rows[:20]:
-        status_val = str(row[12] or "")
-        if drafts_only and status_val != "Draft":
-            continue
-        if not drafts_only and status_val in ("Applied",):
-            continue
-        rank = row[0] or ""
-        company = str(row[1] or "")[:20]
-        title = str(row[2] or "")[:32]
-        score = row[5] or 0
-        tier = str(row[6] or "")[:8]
-        print(f"{rank:>4}  {score:>5}  {tier:8}  {status_val:12}  {company:20}  {title}")
+        print(
+            f"{row.rank:>4}  {row.score:>5}  {row.tier[:8]:8}  "
+            f"{row.status[:12]:12}  {row.company[:20]:20}  {row.title[:32]}"
+        )
 
 
 @app.command()
 def tailor(slug: str = typer.Argument(..., help="Role slug to force-tailor CV for.")) -> None:
     """Force-tailor a CV for one specific role slug."""
     _setup_logging()
-    from agent.tracker.workbook import TrackerWorkbook
     from agent.artifacts import build_cv_artifact
     from agent.cv.master_cv import load_master_cv_facts
     from agent.search.base import JobListing
+    from agent.tracker import get_tracker
 
     settings = get_settings()
-    tracker = TrackerWorkbook(settings)
+    tracker = get_tracker(settings)
     tracker.load_or_create()
-
-    # Find the role in the tracker by slug
-    ws = tracker._pipeline
-    found_row = None
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[14] and f"slug:{slug}" in str(row[14]):
-            found_row = row
-            break
-
-    if not found_row:
+    role = tracker.get_row_by_slug(slug)
+    if not role:
         print(f"Slug '{slug}' not found in tracker. Use 'python -m agent status' to list slugs.")
         raise typer.Exit(1)
 
     listing = JobListing(
-        title=str(found_row[2] or ""),
-        company=str(found_row[1] or ""),
-        location=str(found_row[3] or ""),
-        source=str(found_row[4] or "manual"),
-        apply_url=str(found_row[9] or ""),
+        title=role.title,
+        company=role.company,
+        location=role.location,
+        source=role.source or "manual",
+        apply_url=role.apply_url,
         slug=slug,
     )
     score_result = {
-        "score": found_row[5] or 60,
-        "tier": found_row[6] or "medium",
-        "role_family": found_row[7] or "adjacent",
+        "score": role.score or 60,
+        "tier": role.tier or "medium",
+        "role_family": role.role_family or "adjacent",
         "key_matches": [],
-        "fit_summary": str(found_row[8] or ""),
+        "fit_summary": role.fit_summary,
     }
 
     master_facts = load_master_cv_facts(
@@ -299,22 +290,22 @@ def _artifact_paths(settings, slug: str) -> dict[str, Path]:
 @app.command()
 def review(slug: str = typer.Argument(..., help="Role slug to review.")) -> None:
     """Show role details and artifact paths; optionally approve."""
-    from agent.tracker.workbook import TrackerWorkbook
+    from agent.tracker import get_tracker
 
     settings = get_settings()
-    tracker = TrackerWorkbook(settings)
+    tracker = get_tracker(settings)
     tracker.load_or_create()
-    row = tracker.get_row_by_slug(slug)
-    if not row:
+    role = tracker.get_row_by_slug(slug)
+    if not role:
         print(f"Slug '{slug}' not found.")
         raise typer.Exit(1)
 
     paths = _artifact_paths(settings, slug)
-    print(f"\n{row[1]} — {row[2]}")
-    print(f"Score: {row[5]}/100  Tier: {row[6]}  Status: {row[12]}")
-    print(f"CV Ready: {row[10]}  Letter Ready: {row[11]}")
-    print(f"Apply: {row[9]}")
-    print(f"Fit: {row[8]}")
+    print(f"\n{role.company} -- {role.title}")
+    print(f"Score: {role.score}/100  Tier: {role.tier}  Status: {role.status}")
+    print(f"CV Ready: {role.cv_ready}  Letter Ready: {role.letter_ready}")
+    print(f"Apply: {role.apply_url}")
+    print(f"Fit: {role.fit_summary}")
     print("\nArtifacts:")
     for name, p in paths.items():
         print(f"  {name}: {p} {'OK' if p.exists() else 'missing'}")
@@ -328,10 +319,10 @@ def review(slug: str = typer.Argument(..., help="Role slug to review.")) -> None
 @app.command()
 def approve(slug: str = typer.Argument(..., help="Role slug to approve.")) -> None:
     """Mark role Ready for apply without interactive prompt."""
-    from agent.tracker.workbook import TrackerWorkbook
+    from agent.tracker import get_tracker
 
     settings = get_settings()
-    tracker = TrackerWorkbook(settings)
+    tracker = get_tracker(settings)
     tracker.load_or_create()
     if not tracker.get_row_by_slug(slug):
         print(f"Slug '{slug}' not found.")
@@ -372,15 +363,55 @@ def mark_applied(
 ) -> None:
     """Mark a role as applied in the tracker."""
     _setup_logging()
-    from agent.tracker.workbook import TrackerWorkbook
-    import datetime as dt
+    from agent.tracker import get_tracker
+
     settings = get_settings()
     applied_date = date or dt.date.today().isoformat()
-    tracker = TrackerWorkbook(settings)
+    tracker = get_tracker(settings)
     tracker.load_or_create()
     tracker.mark_applied(slug, applied_date)
     tracker.save()
     print(f"Marked '{slug}' as Applied on {applied_date}.")
+
+
+@app.command("export-tracker")
+def export_tracker_cmd(
+    output: str = typer.Option("", "--output", "-o", help="Output xlsx path."),
+) -> None:
+    """Export the Postgres tracker to an Excel workbook."""
+    from agent.tracker.import_export import export_tracker
+
+    settings = get_settings()
+    out = export_tracker(settings, Path(output) if output else None)
+    print(f"Tracker exported: {out}")
+
+
+@app.command("import-tracker")
+def import_tracker_cmd(
+    source: str = typer.Option("", "--source", "-s", help="Source xlsx path."),
+) -> None:
+    """Import an existing Excel tracker into Postgres."""
+    from agent.tracker.import_export import import_tracker
+
+    settings = get_settings()
+    count = import_tracker(settings, Path(source) if source else None)
+    print(f"Imported {count} roles into Postgres.")
+
+
+@app.command()
+def web() -> None:
+    """Start the local web UI and API."""
+    _setup_logging()
+    import uvicorn
+
+    settings = get_settings()
+    print(f"Starting web UI: http://{settings.web_host}:{settings.web_port}")
+    uvicorn.run(
+        "agent.web.app:app",
+        host=settings.web_host,
+        port=settings.web_port,
+        reload=False,
+    )
 
 
 @app.command()
