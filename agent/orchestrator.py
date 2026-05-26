@@ -635,8 +635,12 @@ def run(
         ]
 
         for listing, result in wave1:
+            if settings.tailor_delay_seconds > 0:
+                time.sleep(settings.tailor_delay_seconds)
             _process_artifact(listing, result, letters=True)
         for listing, result in wave2:
+            if settings.tailor_delay_seconds > 0:
+                time.sleep(settings.tailor_delay_seconds)
             _process_artifact(listing, result, letters=False)
 
         tracker.rerank()

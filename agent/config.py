@@ -8,16 +8,16 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # OpenRouter (OpenAI-compatible)
     openrouter_api_key: str = ""
+    openrouter_api_key_pool: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # Model selection — reliable free OpenRouter models (May 2026)
-    # Primary: llama-3.3-70b is fast, reliable JSON output
-    # CV/Letter: deepseek handles long structured generation well
-    # Fallback: gpt-oss-120b as last resort
-    scoring_model: str = "meta-llama/llama-3.3-70b-instruct:free"
-    cv_model: str = "deepseek/deepseek-r1-distill-llama-70b:free"
-    letter_model: str = "deepseek/deepseek-r1-distill-llama-70b:free"
-    fallback_model: str = "openai/gpt-oss-120b:free"
+    scoring_model: str = "openai/gpt-oss-120b:free"
+    cv_model: str = "openai/gpt-oss-120b:free"
+    letter_model: str = "openai/gpt-oss-20b:free"
+    fallback_model: str = "openai/gpt-oss-20b:free"
+    # Ordered comma-separated pool of models tried in rotation after primary+fallback both fail
+    model_pool: str = "openai/gpt-oss-120b:free,openai/gpt-oss-20b:free,nvidia/nemotron-3-super-120b-a12b:free"
 
     # Workspace
     workspace_dir: str = "workspace"
@@ -32,12 +32,24 @@ class Settings(BaseSettings):
     min_score_to_tailor: int = 60
     persist_dry_run_scores: bool = True
 
-    # Scoring models and rate limits
+    # Scoring rate limits
     scoring_model_fast: str = ""
     scorer_max_retries: int = 5
     scorer_backoff_base_seconds: float = 2.0
-    scorer_delay_seconds: float = 0.0
+    scorer_delay_seconds: float = 2.0  # throttle burst: 2s between scoring calls
     run_report_retention_days: int = 30
+
+    # Tailorer retry / back-off (mirrors scorer logic)
+    tailor_max_retries: int = 4
+    tailor_backoff_base_seconds: float = 3.0
+
+    # Letter writer retry / back-off
+    letter_max_retries: int = 3
+    letter_backoff_base_seconds: float = 3.0
+
+    # Inter-call delay between tailor/letter LLM calls (seconds)
+    # Prevents burst-firing all artifact requests at once after scoring
+    tailor_delay_seconds: float = 3.0
 
     # Source controls
     enabled_sources: str = "wuzzuf,linkedin,bayt"
@@ -111,6 +123,16 @@ class Settings(BaseSettings):
 
     def enabled_source_set(self) -> set[str]:
         return {s.strip().lower() for s in self.enabled_sources.split(",") if s.strip()}
+
+    def get_api_keys(self) -> list[str]:
+        """Return the primary key followed by any keys in the pool."""
+        keys = []
+        if self.openrouter_api_key.strip():
+            keys.append(self.openrouter_api_key.strip())
+        for k in self.openrouter_api_key_pool.split(","):
+            if k.strip() and k.strip() not in keys:
+                keys.append(k.strip())
+        return keys
 
     @property
     def repo_root(self) -> Path:

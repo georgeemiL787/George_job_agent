@@ -9,7 +9,9 @@ from loguru import logger
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, RateLimitError
 
 from agent.config import Settings, get_settings
+from agent.llm_retry import call_with_model_and_key_pool
 from agent.search.base import JobListing
+
 from agent.validation.models import validate_score_result
 
 SYSTEM_PROMPT = """\
@@ -99,24 +101,50 @@ def _retry_after_seconds(exc: Exception, attempt: int, base: float) -> float:
     return delay
 
 
-def _call_with_retry(
-    client: OpenAI,
-    model: str,
-    messages: list[dict],
-    settings: Settings,
-) -> dict | None:
-    max_retries = settings.scorer_max_retries
-    base = settings.scorer_backoff_base_seconds
-    last_error: Exception | None = None
+def score_listing(
+    listing: JobListing,
+    profile: str,
+    settings: Settings | None = None,
+) -> dict:
+    """Score a single job listing. Returns dict with score, tier, etc."""
+    if settings is None:
+        settings = get_settings()
 
-    for attempt in range(max_retries):
+    user_prompt = _build_user_prompt(listing, profile)
+
+    models: list[str] = []
+    seen: set[str] = set()
+    for candidate in (settings.scoring_model_fast, settings.scoring_model, settings.fallback_model):
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            models.append(candidate)
+
+    api_keys = settings.get_api_keys()
+
+    def _call(api_key: str, model: str, validation_hint: bool = False) -> dict | None:
+        current_client = OpenAI(
+            api_key=api_key,
+            base_url=settings.openrouter_base_url,
+            default_headers={
+                "HTTP-Referer": "https://github.com/george-job-agent",
+                "X-Title": "George Job Agent",
+            },
+        )
+        
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt + ("\n\nReturn ONLY valid JSON matching the schema. No extra keys." if validation_hint else "")},
+        ]
+        
+        # RateLimitError/APIStatusError(429/5xx) will be raised and caught by call_with_model_and_key_pool
+        response = current_client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.1,
+            max_tokens=2000,
+        )
+        
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.1,
-                max_tokens=2000,
-            )
             raw = response.choices[0].message.content.strip()
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
@@ -131,85 +159,33 @@ def _call_with_retry(
         except json.JSONDecodeError as e:
             logger.warning(f"Scorer JSON parse error ({model}): {e}")
             return None
-        except Exception as e:
-            last_error = e
-            if not _is_retryable(e) or attempt >= max_retries - 1:
-                logger.warning(f"Scorer API error ({model}): {e}")
-                break
-            delay = _retry_after_seconds(e, attempt, base)
-            logger.warning(f"Scorer retry {attempt + 1}/{max_retries} after {delay:.1f}s ({model}): {e}")
-            time.sleep(delay)
 
-    if last_error and _is_retryable(last_error):
-        raise last_error
-    return None
+    label = f"Scorer '{listing.title}' @ {listing.company}"
 
-
-def score_listing(
-    listing: JobListing,
-    profile: str,
-    settings: Settings | None = None,
-) -> dict:
-    """Score a single job listing. Returns dict with score, tier, etc."""
-    if settings is None:
-        settings = get_settings()
-
-    client = OpenAI(
-        api_key=settings.openrouter_api_key,
-        base_url=settings.openrouter_base_url,
-        default_headers={
-            "HTTP-Referer": "https://github.com/george-job-agent",
-            "X-Title": "George Job Agent",
-        },
+    # First pass
+    result = call_with_model_and_key_pool(
+        lambda k, m: _call(k, m),
+        models=models,
+        api_keys=api_keys,
+        max_retries_per_combination=settings.scorer_max_retries,
+        base_seconds=settings.scorer_backoff_base_seconds,
+        label=label,
     )
 
-    user_prompt = _build_user_prompt(listing, profile)
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    models: list[str] = []
-    seen: set[str] = set()
-    for candidate in (settings.scoring_model_fast, settings.scoring_model, settings.fallback_model):
-        if candidate and candidate not in seen:
-            seen.add(candidate)
-            models.append(candidate)
-
-    result: dict | None = None
-    last_retryable_error: Exception | None = None
-
-    for model in models:
-        try:
-            result = _call_with_retry(client, model, messages, settings)
-            if result is not None:
-                break
-            result = _call_with_retry(
-                client,
-                model,
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": user_prompt + "\n\nReturn ONLY valid JSON matching the schema. No extra keys.",
-                    },
-                ],
-                settings,
-            )
-            if result is not None:
-                break
-        except Exception as e:
-            last_retryable_error = e
-            if _is_retryable(e):
-                logger.warning(f"Scorer model {model} exhausted retries: {e}")
-                continue
-            logger.error(f"Scorer non-retryable error ({model}): {e}")
-            return _failed_result(str(e), retryable=False)
+    # Second pass with validation hint
+    if result is None:
+        logger.info(f"Scorer: retrying all models/keys with validation hint for '{listing.title}'")
+        result = call_with_model_and_key_pool(
+            lambda k, m: _call(k, m, validation_hint=True),
+            models=models,
+            api_keys=api_keys,
+            max_retries_per_combination=max(1, settings.scorer_max_retries // 2),
+            base_seconds=settings.scorer_backoff_base_seconds,
+            label=f"{label} [hint-retry]",
+        )
 
     if result is None:
-        if last_retryable_error:
-            return _failed_result(str(last_retryable_error), retryable=True)
-        logger.error(f"Scorer: all models failed for '{listing.title}' @ {listing.company}")
+        logger.error(f"Scorer: all models/keys failed for '{listing.title}' @ {listing.company}")
         return _failed_result("Could not score — API error.", retryable=True)
 
     logger.info(

@@ -7,7 +7,9 @@ from loguru import logger
 from openai import OpenAI
 
 from agent.config import Settings, get_settings
+from agent.llm_retry import call_with_model_and_key_pool
 from agent.search.base import JobListing
+
 from agent.validation.latex import validate_latex_letter
 
 SYSTEM_PROMPT = """\
@@ -81,53 +83,86 @@ def write_cover_letter(
 
     base_template = base_template_path.read_text(encoding="utf-8")
 
-    client = OpenAI(
-        api_key=settings.openrouter_api_key,
-        base_url=settings.openrouter_base_url,
-        default_headers={
-            "HTTP-Referer": "https://github.com/george-job-agent",
-            "X-Title": "George Job Agent",
-        },
-    )
-
     prompt = _build_letter_prompt(listing, score_result, master_facts, base_template)
 
-    def _call(model: str, validation_feedback: str = "") -> str | None:
+    def _call(api_key: str, model: str, validation_feedback: str = "") -> str | None:
+        """Single attempt — raises retryable errors, returns None for non-retryable."""
         user = prompt
         if validation_feedback:
             user += f"\n\nValidation errors: {validation_feedback}\nFix and output ONLY LaTeX."
+        
+        current_client = OpenAI(
+            api_key=api_key,
+            base_url=settings.openrouter_base_url,
+            default_headers={
+                "HTTP-Referer": "https://github.com/george-job-agent",
+                "X-Title": "George Job Agent",
+            },
+        )
+        
+        # NOTE: RateLimitError / APIStatusError(429/5xx) are intentionally NOT
+        # caught here — call_with_model_and_key_pool handles them with back-off.
+        response = current_client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.3,
+            max_tokens=1500,
+        )
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user},
-                ],
-                temperature=0.3,
-                max_tokens=1500,
-            )
             content = _normalize_latex(response.choices[0].message.content or "")
-            if content is None:
-                logger.warning(f"Cover letter: response does not look like LaTeX ({model})")
-                return None
-            errors = validate_latex_letter(content)
-            if errors:
-                logger.warning(f"Cover letter validation ({model}): {errors}")
-                return None
-            return content
-        except Exception as e:
-            logger.warning(f"Cover letter API error ({model}): {e}")
+        except Exception as parse_exc:
+            logger.warning(f"Cover letter parse error ({model}): {parse_exc}")
             return None
+        if content is None:
+            logger.warning(f"Cover letter: response does not look like LaTeX ({model})")
+            return None
+        errors = validate_latex_letter(content)
+        if errors:
+            logger.warning(f"Cover letter validation ({model}): {errors}")
+            return None
+        return content
 
-    latex_content = _call(settings.letter_model)
+    # Build ordered model list from pool
+    pool_models = [m.strip() for m in settings.model_pool.split(",") if m.strip()]
+    ordered_models: list[str] = []
+    seen: set[str] = set()
+    for m in [settings.letter_model, settings.fallback_model, *pool_models]:
+        if m and m not in seen:
+            ordered_models.append(m)
+            seen.add(m)
+
+    # Get all available API keys
+    api_keys = settings.get_api_keys()
+
+    label = f"Cover letter '{listing.title}' @ {listing.company}"
+
+    # First pass: clean prompt
+    latex_content = call_with_model_and_key_pool(
+        lambda k, m: _call(k, m),
+        models=ordered_models,
+        api_keys=api_keys,
+        max_retries_per_combination=settings.letter_max_retries,
+        base_seconds=settings.letter_backoff_base_seconds,
+        label=label,
+    )
+
+    # Second pass: add validation hint if first pass failed
     if latex_content is None:
-        latex_content = _call(settings.letter_model, "Must include \\documentclass.")
-    if latex_content is None:
-        logger.info(f"Cover letter: retrying fallback for '{listing.title}'")
-        latex_content = _call(settings.fallback_model)
+        logger.info(f"Cover letter: retrying all models/keys with validation hint for '{listing.title}'")
+        latex_content = call_with_model_and_key_pool(
+            lambda k, m: _call(k, m, "Must include \\documentclass."),
+            models=ordered_models,
+            api_keys=api_keys,
+            max_retries_per_combination=max(1, settings.letter_max_retries // 2),
+            base_seconds=settings.letter_backoff_base_seconds,
+            label=f"{label} [hint-retry]",
+        )
 
     if latex_content is None:
-        logger.error(f"Cover letter: failed for '{listing.title}' @ {listing.company}")
+        logger.error(f"Cover letter: all models exhausted for '{listing.title}' @ {listing.company}")
         return None
 
     out_dir = settings.cover_letters_path
