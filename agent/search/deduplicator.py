@@ -24,10 +24,17 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
 
+def dedup_key(title: str, company: str) -> str:
+    """Stable key for cross-source duplicate detection."""
+    return _normalize(title) + _normalize(company)
+
+
 def deduplicate(
     listings: list[JobListing],
     known_slugs: set[str],
     applications_log: str = "",
+    *,
+    known_dedup_keys: set[str] | None = None,
 ) -> list[JobListing]:
     """
     Remove duplicates across sources and against already-tracked/applied roles.
@@ -36,18 +43,18 @@ def deduplicate(
     Dedup key: normalize(title) + normalize(company)
     """
     seen_keys: dict[str, JobListing] = {}
-
-    # Pre-populate with known slugs from tracker (rough match on slug fragments)
-    known_title_company_pairs: set[str] = set()
-    for slug in known_slugs:
-        # slugs are "company-title-source" — extract company+title portion
-        parts = slug.rsplit("-", 1)[0]  # strip source suffix
-        known_title_company_pairs.add(parts.replace("-", ""))
+    if known_dedup_keys is not None:
+        known_title_company_pairs = set(known_dedup_keys)
+    else:
+        known_title_company_pairs = set()
+        for slug in known_slugs:
+            parts = slug.rsplit("-", 1)[0]
+            known_title_company_pairs.add(parts.replace("-", ""))
 
     for listing in listings:
-        key = _normalize(listing.title) + _normalize(listing.company)
+        key = dedup_key(listing.title, listing.company)
 
-        # Skip if already tracked in Excel
+        # Skip if already tracked
         if key in known_title_company_pairs:
             logger.debug(f"Dedup: skip already-tracked '{listing.title}' @ {listing.company}")
             continue

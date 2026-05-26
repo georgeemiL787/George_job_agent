@@ -30,3 +30,17 @@ def test_prefilter_boosts_intern():
     result = prefilter_listing(listing, Settings(prefilter_min_score=30))
     assert result.pass_llm
     assert result.relevance_score >= 30
+
+
+def test_prefilter_accepts_remote_in_description():
+    listing = JobListing(
+        title="ML Engineer",
+        company="Co",
+        location="Dubai",
+        source="wuzzuf",
+        apply_url="https://example.com/3",
+        description="Fully remote role open to candidates in Egypt. Python pytorch.",
+        card_snippet="",
+    )
+    result = prefilter_listing(listing, Settings(prefilter_min_score=30))
+    assert result.pass_llm

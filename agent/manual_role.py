@@ -10,6 +10,7 @@ from agent.memory.store import MemoryStore
 from agent.scoring.scorer import score_listing
 from agent.search.base import JobListing
 from agent.tailor_gates import should_tailor_cv, should_tailor_letter
+from agent.scoring.payload import score_payload_json
 from agent.tracker import get_tracker
 
 
@@ -23,7 +24,12 @@ def process_manual_role(listing: JobListing, settings: Settings) -> dict:
 
     tracker = get_tracker(settings)
     tracker.load_or_create()
-    tracker.upsert_role(listing, result)
+    tracker.upsert_role(
+        listing,
+        result,
+        scoring_status="skipped" if result["tier"] == "skip" else "scored",
+        score_payload=score_payload_json(result),
+    )
 
     master_facts = load_master_cv_facts(
         settings,

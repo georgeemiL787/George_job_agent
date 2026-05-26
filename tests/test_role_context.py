@@ -24,8 +24,21 @@ def test_score_result_from_role_merges_payload():
         ),
     )
     result = score_result_from_role(role)
+    assert result["score"] == 75
     assert result["key_matches"] == ["deep learning"]
     assert "TensorFlow" in result["ats_keywords"]
+
+
+def test_score_result_from_role_uses_payload_score_when_column_zero():
+    role = RoleRecord(
+        slug="co-role",
+        score=0,
+        tier="medium",
+        score_payload=json.dumps({"score": 58, "tier": "medium", "role_family": "ml_engineer"}),
+    )
+    result = score_result_from_role(role)
+    assert result["score"] == 58
+    assert result["tier"] == "medium"
 
 
 def test_listing_from_role_uses_stored_description(tmp_path):

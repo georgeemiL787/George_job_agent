@@ -21,6 +21,7 @@ from agent.observability.run_report import (
     write_run_report,
 )
 from agent.run_control import RunCancelled, RunOptions, RunStatus, get_coordinator
+from agent.scoring.payload import score_payload_json
 from agent.scoring.prefilter import PrefilterResult, prefilter_listing, should_llm_score
 from agent.scoring.scorer import queries_for_mode, score_listing
 from agent.search.base import BaseScraper, JobListing
@@ -66,8 +67,12 @@ def _run_scraper_safe(
 def _max_scoring_cap(settings: Settings, options: RunOptions | None) -> int:
     mode = (options.mode if options else "fast").lower()
     if mode == "deep":
-        return settings.deep_run_max_scoring_candidates
-    return settings.fast_run_max_scoring_candidates
+        cap = settings.deep_run_max_scoring_candidates
+    else:
+        cap = settings.fast_run_max_scoring_candidates
+    if settings.max_scoring_candidates > 0:
+        cap = min(cap, settings.max_scoring_candidates)
+    return cap
 
 
 def _collect_all_listings(
@@ -199,10 +204,11 @@ def _persist_prefilter_skips(
         payload = json.dumps(
             {"prefilter_score": pf.relevance_score if pf else 0, "reason": reason}
         )
+        prefilter_score = pf.relevance_score if pf else 0
         tracker.upsert_role(
             listing,
             {
-                "score": 0,
+                "score": prefilter_score,
                 "tier": "skip",
                 "fit_summary": reason,
                 "key_matches": [],
@@ -217,15 +223,36 @@ def _persist_prefilter_skips(
     return count
 
 
-def _score_payload_json(result: dict) -> str:
-    return json.dumps(
-        {
-            "key_matches": result.get("key_matches", []),
-            "gaps": result.get("gaps", []),
-            "reasoning": result.get("reasoning", ""),
-            "retryable": result.get("retryable", False),
-        }
-    )
+def _persist_queued_overflow(
+    tracker,
+    queued: list[tuple[JobListing, PrefilterResult]],
+    *,
+    run_id: int,
+    persist: bool,
+    cap: int,
+) -> int:
+    """Persist fresh prefilter-passed roles that exceeded the LLM scoring cap."""
+    if not persist or not queued:
+        return 0
+    count = 0
+    for listing, pf in queued:
+        payload = json.dumps({"prefilter_score": pf.relevance_score, "reason": pf.reason})
+        tracker.upsert_role(
+            listing,
+            {
+                "score": pf.relevance_score,
+                "tier": "skip",
+                "fit_summary": f"Queued: exceeded scoring cap ({cap}); {pf.reason}",
+                "key_matches": [],
+                "gaps": [],
+                "role_family": "irrelevant",
+            },
+            run_id=run_id,
+            scoring_status="queued",
+            source_payload=payload,
+        )
+        count += 1
+    return count
 
 
 def _build_run_summary(
@@ -349,23 +376,19 @@ def run(
         coordinator.update_progress(collected=report.raw_listings)
         _flush_report(report, settings, tracker, coordinator)
 
-        prefiltered, prefilter_rejected = _prefilter_all(all_listings, settings)
-        report.prefilter_rejected = len(prefilter_rejected)
-        coordinator.update_progress(prefilter_rejected=report.prefilter_rejected)
-        prefilter_by_slug = {listing.slug: pf for listing, pf in prefiltered + prefilter_rejected}
-        detail_cap = min(len(prefiltered), _max_scoring_cap(settings, opts) * 2)
-        shortlist = [listing for listing, _ in prefiltered[:detail_cap]]
-        logger.info(f"[run {run_id}] Fetching descriptions for {len(shortlist)} shortlisted listings...")
-        _fetch_details_for_shortlist(shortlist, scrapers, settings, coordinator, detail_cap, report)
-
         _log_apply_links(all_listings, settings)
 
         coordinator.set_phase("dedup", message="Deduplicating against known roles")
         report.phase = "dedup"
-        logger.info("Deduplicating against known slugs...")
-        known_slugs = tracker.get_all_slugs()
+        logger.info("Deduplicating against known roles...")
+        known_dedup_keys = tracker.get_known_dedup_keys()
         applications_log = memory.load_applications_log()
-        fresh = deduplicate(all_listings, known_slugs, applications_log)
+        fresh = deduplicate(
+            all_listings,
+            tracker.get_all_slugs(),
+            applications_log,
+            known_dedup_keys=known_dedup_keys,
+        )
         report.fresh_listings = len(fresh)
         coordinator.update_progress(fresh=report.fresh_listings)
         _flush_report(report, settings, tracker, coordinator)
@@ -379,6 +402,17 @@ def run(
             return
 
         fresh_set = {listing.slug for listing in fresh}
+        prefiltered, prefilter_rejected = _prefilter_all(fresh, settings)
+        report.prefilter_rejected = len(prefilter_rejected)
+        coordinator.update_progress(prefilter_rejected=report.prefilter_rejected)
+        prefilter_by_slug = {listing.slug: pf for listing, pf in prefiltered + prefilter_rejected}
+
+        scoring_cap = _max_scoring_cap(settings, opts)
+        detail_cap = min(len(prefiltered), scoring_cap * 2)
+        shortlist = [listing for listing, _ in prefiltered[:detail_cap]]
+        logger.info(f"[run {run_id}] Fetching descriptions for {len(shortlist)} shortlisted listings...")
+        _fetch_details_for_shortlist(shortlist, scrapers, settings, coordinator, detail_cap, report)
+
         prefilter_passed_slugs = {listing.slug for listing, _ in prefiltered}
         persist_scores = not dry_run or settings.persist_dry_run_scores
         skipped_prefilter = _persist_prefilter_skips(
@@ -391,11 +425,17 @@ def run(
         )
         report.prefilter_rejected += skipped_prefilter
 
-        llm_candidates = [
-            (listing, pf)
-            for listing, pf in prefiltered
-            if listing.slug in fresh_set
-        ][: _max_scoring_cap(settings, opts)]
+        fresh_prefiltered = [(listing, pf) for listing, pf in prefiltered if listing.slug in fresh_set]
+        llm_candidates = fresh_prefiltered[:scoring_cap]
+        queued_overflow = fresh_prefiltered[scoring_cap:]
+        if persist_scores:
+            _persist_queued_overflow(
+                tracker,
+                queued_overflow,
+                run_id=run_id,
+                persist=True,
+                cap=scoring_cap,
+            )
 
         score_target = len(llm_candidates)
         coordinator.set_phase("score", message=f"Scoring up to {score_target} listings")
@@ -409,7 +449,7 @@ def run(
             coordinator.check_cancelled()
             payload = json.dumps({"prefilter_score": pf.relevance_score, "reason": pf.reason})
             skip_result = {
-                "score": 0,
+                "score": pf.relevance_score,
                 "tier": "skip",
                 "fit_summary": pf.reason,
                 "key_matches": [],
@@ -487,7 +527,7 @@ def run(
                     run_id=run_id,
                     scoring_status=scoring_status,
                     source_payload=payload,
-                    score_payload=_score_payload_json(result),
+                    score_payload=score_payload_json(result),
                 )
 
             if result["tier"] != "skip":

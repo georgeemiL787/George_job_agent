@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -97,6 +98,40 @@ class RoleRecord:
             "source_payload": self.source_payload,
             "score_payload": self.score_payload,
         }
+
+
+def effective_score(record: RoleRecord) -> int:
+    """Best available score for UI: DB column, then LLM payload, then prefilter."""
+    if record.score > 0:
+        return record.score
+    if record.score_payload:
+        try:
+            payload = json.loads(record.score_payload)
+            if isinstance(payload, dict) and payload.get("score") is not None:
+                return int(payload["score"])
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    if record.source_payload:
+        try:
+            payload = json.loads(record.source_payload)
+            if isinstance(payload, dict) and payload.get("prefilter_score") is not None:
+                return int(payload["prefilter_score"])
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    return int(record.score or 0)
+
+
+def format_added_date(record: RoleRecord) -> str:
+    """Human-readable date the role was first added to the tracker."""
+    raw = record.first_seen
+    if not raw:
+        return ""
+    try:
+        parsed = dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        return parsed.strftime("%Y-%m-%d")
+    except ValueError:
+        text = str(raw)
+        return text[:10] if len(text) >= 10 else text
 
 
 @dataclass

@@ -19,6 +19,7 @@ import httpx
 from bs4 import BeautifulSoup
 from loguru import logger
 
+from agent.config import get_settings
 from agent.search.base import BaseScraper, JobListing
 
 _SEARCH_URL = (
@@ -99,6 +100,17 @@ def _fetch_description(client: httpx.Client, job_id: str) -> str:
 
 
 
+def _linkedin_tpr(hours: int) -> str | None:
+    """Map hours to LinkedIn guest API f_TPR filter (None = no time filter)."""
+    if hours <= 0:
+        return None
+    if hours <= 24:
+        return "r86400"
+    if hours <= 168:
+        return "r604800"
+    return "r2592000"
+
+
 def _extract_job_id(apply_url: str) -> str:
     """Extract the LinkedIn job ID from a job URL."""
     # e.g. https://www.linkedin.com/jobs/view/1234567890/
@@ -127,6 +139,8 @@ class LinkedInJobsScraper(BaseScraper):
         results: list[JobListing] = []
         seen_ids: set[str] = set()
 
+        tpr = _linkedin_tpr(get_settings().linkedin_posted_within_hours)
+
         with httpx.Client() as client:
             for query in queries:
                 if len(results) >= max_results:
@@ -136,15 +150,13 @@ class LinkedInJobsScraper(BaseScraper):
                     if len(results) >= max_results:
                         break
 
-                    params = {
+                    params: dict[str, str | int] = {
                         "keywords": query,
                         "location": location,
                         "start": page * _PAGE_SIZE,
-                        "f_TPR": "r86400",  # posted in last 24h — remove for broader
                     }
-                    # Remove time filter for broader results on later pages
-                    if page > 0:
-                        params.pop("f_TPR", None)
+                    if tpr and page == 0:
+                        params["f_TPR"] = tpr
 
                     logger.debug(f"LinkedIn search: {query!r} page {page}")
                     _sleep()

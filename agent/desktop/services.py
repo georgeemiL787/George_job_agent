@@ -8,12 +8,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from agent.artifacts import build_cv_artifact
+from agent.artifacts import build_cv_artifact, build_letter_artifact
+from agent.scrape_health import run_scrape_health
 from agent.config import Settings
 from agent.cv.master_cv import load_master_cv_facts
 from agent.desktop.config_io import setup_is_missing
 from agent.desktop.role_context import listing_from_role, score_result_from_role
-from agent.tailor_gates import should_tailor_cv
+from agent.tailor_gates import should_tailor_cv, should_tailor_letter
 from agent.manual_role import process_manual_role
 from agent.observability.run_report import load_active_run_report, load_latest_run_report
 from agent.package_role import package_role
@@ -24,7 +25,7 @@ from agent.search.linkedin_import import RoleDraft, draft_to_listing
 from agent.sync_master import sync_master_tex
 from agent.tracker import get_tracker
 from agent.tracker.import_export import export_tracker, import_tracker
-from agent.tracker.models import RoleRecord
+from agent.tracker.models import RoleRecord, effective_score, format_added_date
 from agent.workspace_seed import seed_workspace
 
 WORKSPACE_DIRS = [
@@ -52,6 +53,8 @@ def artifact_paths(settings: Settings, slug: str) -> dict[str, Path]:
 
 def role_payload(role: RoleRecord, settings: Settings) -> dict[str, Any]:
     payload = role.to_api_dict()
+    payload["display_score"] = effective_score(role)
+    payload["added_date"] = format_added_date(role)
     payload["artifacts"] = {name: path.exists() for name, path in artifact_paths(settings, role.slug).items()}
     return payload
 
@@ -118,22 +121,30 @@ class DesktopService:
 
     def retry_failed_scores(self, limit: int = 20) -> int:
         from agent.memory.store import MemoryStore
+        from agent.scoring.payload import score_payload_json
         from agent.scoring.scorer import score_listing
 
         tracker = get_tracker(self.settings)
         tracker.load_or_create()
         profile = MemoryStore(self.settings).load_profile()
         failed = tracker.list_by_scoring_status("failed", limit=limit)
+        seen = {role.slug for role in failed}
+        for role in tracker.list_pipeline_rows(include_applied=True):
+            if len(failed) >= limit:
+                break
+            if role.slug in seen:
+                continue
+            if role.scoring_status == "failed":
+                continue
+            if role.score > 0 or role.tier != "skip":
+                continue
+            if role.scoring_status == "skipped":
+                continue
+            failed.append(role)
+            seen.add(role.slug)
         retried = 0
-        for role in failed:
-            listing = JobListing(
-                title=role.title,
-                company=role.company,
-                location=role.location,
-                source=role.source,
-                apply_url=role.apply_url,
-                slug=role.slug,
-            )
+        for role in failed[:limit]:
+            listing = listing_from_role(role, self.settings)
             result = score_listing(listing, profile, self.settings)
             if result.get("scoring_failed"):
                 tracker.set_role_scoring(
@@ -147,8 +158,11 @@ class DesktopService:
                 result,
                 scoring_status="skipped" if result["tier"] == "skip" else "scored",
                 failure_reason="",
+                score_payload=score_payload_json(result),
             )
             retried += 1
+        tracker.rerank()
+        tracker.save()
         return retried
 
     def cancel_run(self) -> None:
@@ -204,7 +218,15 @@ class DesktopService:
         role = self.get_role(listing.slug)
         return {"score": result, "role": role}
 
-    def tailor_role(self, slug: str) -> dict[str, str | None]:
+    def scrape_health_report(self, *, mode: str = "fast") -> str:
+        stats = run_scrape_health(self.settings, mode=mode)
+        lines = [f"Scraper health ({mode} mode):", ""]
+        for name, row in stats.items():
+            msg = row.get("message") or row.get("error") or ""
+            lines.append(f"{name}: {row.get('count', 0)} [{row.get('status', '?')}] {msg}".strip())
+        return "\n".join(lines) if lines else "No sources enabled."
+
+    def tailor_role(self, slug: str, *, force: bool = False) -> dict[str, str | None]:
         if setup_is_missing(self.settings):
             raise ValueError(
                 "OpenRouter API key is not configured. Open Settings and add your OPENROUTER_API_KEY."
@@ -218,9 +240,10 @@ class DesktopService:
 
         score_result = score_result_from_role(role)
         score = int(score_result.get("score") or 0)
-        if not should_tailor_cv(score, self.settings):
+        if not force and not should_tailor_cv(score, self.settings):
             raise ValueError(
-                f"Score {score} is below the minimum {self.settings.min_score_to_tailor} required to tailor a CV."
+                f"Score {score} is below the minimum {self.settings.min_score_to_tailor} required to tailor a CV. "
+                "Use Force tailor to override."
             )
 
         listing = listing_from_role(role, self.settings)
@@ -247,6 +270,47 @@ class DesktopService:
         tracker.mark_cv_ready(slug)
         tracker.mark_draft(slug)
         tracker.set_artifact_status(slug, "cv_done")
+        tracker.save()
+        return {
+            "tex_path": str(artifact.tex_path) if artifact.tex_path else None,
+            "pdf_path": str(artifact.pdf_path) if artifact.pdf_path else None,
+        }
+
+    def tailor_letter_role(self, slug: str) -> dict[str, str | None]:
+        if setup_is_missing(self.settings):
+            raise ValueError(
+                "OpenRouter API key is not configured. Open Settings and add your OPENROUTER_API_KEY."
+            )
+
+        tracker = get_tracker(self.settings)
+        tracker.load_or_create()
+        role = tracker.get_row_by_slug(slug)
+        if not role:
+            raise ValueError(f"Role not found: {slug}")
+
+        score_result = score_result_from_role(role)
+        tier = str(score_result.get("tier") or "")
+        if not should_tailor_letter(tier):
+            raise ValueError(f"Tier '{tier}' is not eligible for cover letter generation.")
+
+        listing = listing_from_role(role, self.settings)
+        try:
+            master_facts = load_master_cv_facts(
+                self.settings,
+                role_family=str(score_result.get("role_family") or ""),
+                company=listing.company,
+            )
+        except FileNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+
+        artifact = build_letter_artifact(listing, score_result, master_facts, self.settings)
+        if not artifact.ok:
+            detail = "; ".join(artifact.errors or ["Cover letter generation failed"])
+            raise ValueError(detail)
+
+        tracker.mark_letter_ready(slug)
+        tracker.mark_draft(slug)
+        tracker.set_artifact_status(slug, "letter_done")
         tracker.save()
         return {
             "tex_path": str(artifact.tex_path) if artifact.tex_path else None,

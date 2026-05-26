@@ -107,6 +107,21 @@ Output: `dist\GeorgeJobAgent\GeorgeJobAgent.exe`
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for cleanup and commit guidelines.
 
+## Scheduler
+
+- **Desktop**: Dashboard scheduler uses `workspace/config/schedule.json`. The app must stay open; the label shows the approximate next run time.
+- **CLI**: `python -m agent schedule` uses APScheduler in the terminal (also requires the process to stay open).
+- Intervals supported in the desktop UI: 1, 2, 4, 6, 8, 12, and 24 hours.
+
+## Troubleshooting
+
+| Symptom | What to check |
+|---------|----------------|
+| All scores show `0` / tier `skip` | OpenRouter key in Settings; use **Retry failed scores** on the Roles tab; roles filtered before LLM show prefilter scores after refresh |
+| Dark theme missing in dev | Fixed in `agent/desktop/theme` — restart the app |
+| Bayt/GulfTalent/Indeed empty | Run **Check scraper health** on the Dashboard; install Chromium via setup |
+| Excel import missing columns | Re-export after upgrading — export now includes scoring/artifact/ATS columns |
+
 ## Rules
 
 - The app never invents qualifications, employers, or metrics.

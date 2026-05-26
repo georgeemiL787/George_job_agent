@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine
 
 from agent.config import Settings
 from agent.search.base import JobListing
+from agent.search.deduplicator import dedup_key
 from agent.tracker.models import EventRecord, RoleRecord
 
 metadata = MetaData()
@@ -286,6 +287,13 @@ class SqlTracker:
             "applied_date": _parse_date(record.applied_date),
             "first_seen": _parse_datetime(record.first_seen),
             "last_updated": _parse_datetime(record.last_updated) or _now(),
+            "ats_keywords": record.ats_keywords,
+            "run_id": record.run_id,
+            "scoring_status": record.scoring_status,
+            "artifact_status": record.artifact_status,
+            "failure_reason": record.failure_reason,
+            "source_payload": record.source_payload,
+            "score_payload": record.score_payload,
         }
         engine = self._require_engine()
         with engine.begin() as conn:
@@ -359,6 +367,12 @@ class SqlTracker:
         with engine.begin() as conn:
             rows = conn.execute(sa.select(roles_table.c.slug)).scalars().all()
         return set(rows)
+
+    def get_known_dedup_keys(self) -> set[str]:
+        engine = self._require_engine()
+        with engine.begin() as conn:
+            rows = conn.execute(sa.select(roles_table.c.title, roles_table.c.company)).all()
+        return {dedup_key(str(title or ""), str(company or "")) for title, company in rows}
 
     def list_pipeline_rows(
         self,

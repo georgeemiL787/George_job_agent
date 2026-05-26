@@ -1,6 +1,6 @@
 """Tests for the deduplicator."""
 from agent.search.base import JobListing
-from agent.search.deduplicator import deduplicate
+from agent.search.deduplicator import dedup_key, deduplicate
 
 
 def make_listing(title, company, source):
@@ -35,12 +35,16 @@ def test_dedup_keeps_distinct_roles():
     assert len(result) == 3
 
 
-def test_dedup_removes_known_slugs():
+def test_dedup_removes_known_dedup_keys():
     listing = make_listing("AI Engineer", "TestCorp", "wuzzuf")
-    # The slug normalizes to "testcorp-ai-engineer" portion
-    # With the actual slug in tracker: match via normalized key in known_slugs
-    result = deduplicate([listing], set())
-    # Without any known slugs, it should pass through
+    key = dedup_key(listing.title, listing.company)
+    result = deduplicate([listing], set(), known_dedup_keys={key})
+    assert len(result) == 0
+
+
+def test_dedup_passes_when_key_unknown():
+    listing = make_listing("AI Engineer", "TestCorp", "wuzzuf")
+    result = deduplicate([listing], set(), known_dedup_keys=set())
     assert len(result) == 1
 
 

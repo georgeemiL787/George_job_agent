@@ -8,7 +8,7 @@ from loguru import logger
 from agent.config import Settings
 from agent.search.base import BaseScraper, JobListing
 from agent.search.registry import build_scraper_registry
-from agent.tracker.models import RoleRecord
+from agent.tracker.models import RoleRecord, effective_score
 
 
 def _normalize_source(source: str) -> str:
@@ -22,7 +22,7 @@ def score_result_from_role(role: RoleRecord) -> dict:
     """Reconstruct scorer output from tracker columns."""
     ats = [k.strip() for k in (role.ats_keywords or "").split(",") if k.strip()]
     result: dict = {
-        "score": int(role.score or 0),
+        "score": effective_score(role),
         "tier": role.tier or "medium",
         "role_family": role.role_family or "adjacent",
         "fit_summary": role.fit_summary or "",
@@ -38,7 +38,16 @@ def score_result_from_role(role: RoleRecord) -> dict:
         return result
     if not isinstance(payload, dict):
         return result
-    for key in ("key_matches", "gaps", "reasoning", "ats_keywords", "fit_summary", "tier", "role_family"):
+    for key in (
+        "score",
+        "key_matches",
+        "gaps",
+        "reasoning",
+        "ats_keywords",
+        "fit_summary",
+        "tier",
+        "role_family",
+    ):
         if key in payload and payload[key] is not None:
             result[key] = payload[key]
     if not result["ats_keywords"] and ats:

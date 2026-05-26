@@ -105,6 +105,7 @@ class SetupDialog(QDialog):
     def __init__(self, settings: Settings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.settings = settings
+        self._install_worker: FunctionWorker | None = None
         self.setWindowTitle("George Job Agent Setup")
         self.setMinimumWidth(620)
 
@@ -191,24 +192,28 @@ class SetupDialog(QDialog):
             )
         )
 
+    def _run_background_install(self, status: str, func: Callable[[], str]) -> None:
+        if self._install_worker and self._install_worker.isRunning():
+            self.status.setPlainText("Another install is already running.")
+            return
+        self.status.setPlainText(status)
+        self._install_worker = FunctionWorker(func)
+        self._install_worker.succeeded.connect(lambda msg: self.status.setPlainText(str(msg)))
+        self._install_worker.failed.connect(lambda msg: self.status.setPlainText(msg))
+        self._install_worker.start()
+
     def install_chromium(self) -> None:
-        self.status.setPlainText("Installing Playwright Chromium. This can take a few minutes...")
-        QApplication.processEvents()
-        try:
-            self.status.setPlainText(install_playwright_chromium())
-        except Exception as exc:
-            self.status.setPlainText(str(exc))
+        self._run_background_install(
+            "Installing Playwright Chromium. This can take a few minutes...",
+            install_playwright_chromium,
+        )
 
     def install_miktex(self) -> None:
-        self.status.setPlainText(
+        self._run_background_install(
             "Installing MiKTeX via winget. This can take several minutes...\n"
-            "Please wait — do not close this dialog."
+            "Please wait — do not close this dialog.",
+            install_miktex,
         )
-        QApplication.processEvents()
-        try:
-            self.status.setPlainText(install_miktex())
-        except Exception as exc:
-            self.status.setPlainText(str(exc))
 
     def save(self) -> None:
         workspace = self.workspace.text().strip() or "workspace"
@@ -327,12 +332,17 @@ class MainWindow(QMainWindow):
             sources_layout.addWidget(cb)
         save_sources = QPushButton("Save sources as default")
         save_sources.clicked.connect(self.save_source_defaults)
+        scrape_health = QPushButton("Check scraper health")
+        scrape_health.clicked.connect(self.run_scrape_health_check)
         sources_layout.addWidget(save_sources)
+        sources_layout.addWidget(scrape_health)
 
         schedule_box = QGroupBox("Scheduler")
         schedule_layout = QGridLayout(schedule_box)
         self.schedule_mode = QComboBox()
-        self.schedule_mode.addItems(["Off", "1 hour", "2 hours", "4 hours"])
+        self.schedule_mode.addItems(
+            ["Off", "1 hour", "2 hours", "4 hours", "6 hours", "8 hours", "12 hours", "24 hours"]
+        )
         self.schedule_save = QPushButton("Save schedule")
         self.schedule_save.clicked.connect(self.save_schedule)
         self.next_run = QLabel("Not scheduled")
@@ -408,6 +418,9 @@ class MainWindow(QMainWindow):
         actions = QHBoxLayout()
         for label, handler in [
             ("Tailor CV", self.tailor_selected),
+            ("Force tailor", self.force_tailor_selected),
+            ("Cover letter", self.letter_selected),
+            ("Open apply URL", self.open_apply_url),
             ("Approve", self.approve_selected),
             ("Package", self.package_selected),
             ("Open CV folder", lambda: self.open_path(self.settings.cv_tailored_path)),
@@ -538,16 +551,64 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(make_scroll_page(page), title)
 
     def _new_roles_table(self) -> QTableWidget:
-        table = QTableWidget(0, 9)
+        table = QTableWidget(0, 10)
         table.setHorizontalHeaderLabels(
-            ["Rank", "Score", "Tier", "Status", "ScoreSt", "ArtSt", "Company", "Role", "Source"]
+            [
+                "Rank",
+                "Score",
+                "Tier",
+                "Added",
+                "Status",
+                "Scoring",
+                "Artifacts",
+                "Company",
+                "Role",
+                "Source",
+            ]
         )
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._configure_roles_table(table)
+        return table
+
+    def _configure_roles_table(self, table: QTableWidget) -> None:
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        widths = (44, 52, 64, 88, 96, 72, 72, 120, 200, 72)
+        for col, width in enumerate(widths):
+            table.setColumnWidth(col, width)
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
+        tooltips = [
+            "Pipeline rank",
+            "Fit score (0–100)",
+            "Tier",
+            "Date added to tracker",
+            "Application status",
+            "Scoring status (scored, skipped, failed, queued)",
+            "Artifact status (CV / letter)",
+            "Company",
+            "Role title",
+            "Job board source",
+        ]
+        for col, tip in enumerate(tooltips):
+            header.model().setHeaderData(col, Qt.Orientation.Horizontal, tip, Qt.ItemDataRole.ToolTipRole)
         table.verticalHeader().setDefaultSectionSize(32)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.itemDoubleClicked.connect(self.table_role_opened)
-        return table
+        table.itemSelectionChanged.connect(lambda: self._role_table_selection_changed(table))
+
+    def _role_table_selection_changed(self, table: QTableWidget) -> None:
+        items = table.selectedItems()
+        if not items:
+            return
+        slug = items[0].data(Qt.ItemDataRole.UserRole)
+        if slug:
+            self.selected_slug = str(slug)
+
+    def _tab_index(self, title: str) -> int:
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == title:
+                return i
+        return 0
 
     def initialize_app(self) -> None:
         try:
@@ -672,8 +733,9 @@ class MainWindow(QMainWindow):
         for row_index, role in enumerate(rows):
             values = [
                 role.get("rank") or "",
-                role.get("score") or 0,
+                role.get("display_score", role.get("score")) or 0,
                 role.get("tier") or "",
+                role.get("added_date") or "",
                 role.get("status") or "",
                 role.get("scoring_status") or "",
                 role.get("artifact_status") or "",
@@ -690,7 +752,7 @@ class MainWindow(QMainWindow):
         slug = item.data(Qt.ItemDataRole.UserRole)
         if slug:
             self.load_role_detail(str(slug))
-            self.tabs.setCurrentIndex(2)
+            self.tabs.setCurrentIndex(self._tab_index("Role Detail"))
 
     def load_role_detail(self, slug: str) -> None:
         role = self.service.get_role(slug)
@@ -700,10 +762,17 @@ class MainWindow(QMainWindow):
         self.selected_slug = slug
         self.detail_title.setText(f"{role['company']} - {role['title']}")
         fr = role.get("failure_reason") or ""
+        display_score = role.get("display_score", role.get("score", 0))
+        added = role.get("added_date") or ""
+        added_part = f" | Added {added}" if added else ""
+        artifacts = role.get("artifacts") or {}
+        art_bits = ", ".join(f"{k}: {'yes' if v else 'no'}" for k, v in artifacts.items())
         self.detail_meta.setText(
-            f"Score {role['score']}/100 | {role['tier']} | {role['status']} | "
+            f"Score {display_score}/100 | {role['tier']} | {role['status']} | "
             f"{role.get('scoring_status', '')} | {role.get('artifact_status', '')} | {role['source']}"
-            + (f" | Error: {fr[:60]}" if fr else "")
+            f"{added_part}"
+            + (f" | {art_bits}" if art_bits else "")
+            + (f" | Error: {fr}" if fr else "")
         )
         self.apply_url.setText(role.get("apply_url") or "")
         fit = role.get("fit_summary") or ""
@@ -739,6 +808,8 @@ class MainWindow(QMainWindow):
         if not self.service.is_run_active():
             self.progress_timer.stop()
             self.run_stop_btn.setEnabled(False)
+            if not (self.worker and self.worker.isRunning()):
+                self._set_run_buttons_enabled(True)
             self._apply_run_ui_state()
             return
         p = self.service.get_run_progress()
@@ -773,6 +844,11 @@ class MainWindow(QMainWindow):
     def show_info(self, message: str) -> None:
         QMessageBox.information(self, "George Job Agent", message)
 
+    def _set_run_buttons_enabled(self, enabled: bool) -> None:
+        self.run_fast_btn.setEnabled(enabled)
+        self.run_deep_btn.setEnabled(enabled)
+        self.run_dry_btn.setEnabled(enabled)
+
     def start_worker(
         self,
         status: str,
@@ -786,6 +862,7 @@ class MainWindow(QMainWindow):
             return
         self.run_status.setText(status)
         if is_run:
+            self._set_run_buttons_enabled(False)
             self.run_stop_btn.setEnabled(True)
             self.progress_timer.start(250)
         self.worker = FunctionWorker(func)
@@ -803,6 +880,7 @@ class MainWindow(QMainWindow):
         if is_run:
             self.progress_timer.stop()
             self.run_stop_btn.setEnabled(False)
+            self._set_run_buttons_enabled(True)
             self.refresh_run_progress()
             report = self.service.latest_run_report()
             terminal = (report or {}).get("status", "complete")
@@ -817,6 +895,7 @@ class MainWindow(QMainWindow):
         if is_run:
             self.progress_timer.stop()
             self.run_stop_btn.setEnabled(False)
+            self._set_run_buttons_enabled(True)
         self.run_status.setText("Failed")
         self.show_error(message)
         self.refresh_logs()
@@ -840,10 +919,16 @@ class MainWindow(QMainWindow):
         self.apply_schedule_timer(enabled, interval)
 
     def apply_schedule_timer(self, enabled: bool, interval_hours: int) -> None:
+        import datetime as dt
+
         self.schedule_timer.stop()
         if enabled:
             self.schedule_timer.start(interval_hours * 60 * 60 * 1000)
-            self.next_run.setText(f"Every {interval_hours}h while app is open")
+            next_at = dt.datetime.now() + dt.timedelta(hours=interval_hours)
+            self.next_run.setText(
+                f"Next ~{next_at.strftime('%Y-%m-%d %H:%M')} "
+                f"(every {interval_hours}h while app is open)"
+            )
         else:
             self.next_run.setText("Not scheduled")
 
@@ -863,6 +948,58 @@ class MainWindow(QMainWindow):
             "Processing manual role",
             lambda: self.service.add_manual_role(body),
             lambda result: self.load_role_detail(result["role"]["slug"]) if result.get("role") else None,
+        )
+
+    def run_scrape_health_check(self) -> None:
+        self.start_worker(
+            "Checking scraper health",
+            lambda: self.service.scrape_health_report(mode="fast"),
+            on_success=lambda text: self.scraper_health.setPlainText(text),
+        )
+
+    def open_apply_url(self) -> None:
+        if not self.selected_slug:
+            self.show_error("Select a role first.")
+            return
+        role = self.service.get_role(self.selected_slug)
+        url = (role or {}).get("apply_url") or ""
+        if not url:
+            self.show_error("No apply URL for this role.")
+            return
+        QDesktopServices.openUrl(QUrl(url))
+
+    def force_tailor_selected(self) -> None:
+        def on_success(result: dict[str, str | None]) -> None:
+            if result.get("pdf_path"):
+                self.show_info(f"CV ready.\nPDF: {result['pdf_path']}")
+            elif result.get("tex_path"):
+                self.show_info(f"CV TeX saved.\n{result['tex_path']}")
+            else:
+                self.show_info("CV tailored successfully.")
+
+        self.require_selected(
+            lambda slug: self.start_worker(
+                "Force tailoring CV",
+                lambda: self.service.tailor_role(slug, force=True),
+                on_success=on_success,
+            )
+        )
+
+    def letter_selected(self) -> None:
+        def on_success(result: dict[str, str | None]) -> None:
+            if result.get("pdf_path"):
+                self.show_info(f"Letter ready.\nPDF: {result['pdf_path']}")
+            elif result.get("tex_path"):
+                self.show_info(f"Letter TeX saved.\n{result['tex_path']}")
+            else:
+                self.show_info("Cover letter generated.")
+
+        self.require_selected(
+            lambda slug: self.start_worker(
+                "Generating cover letter",
+                lambda: self.service.tailor_letter_role(slug),
+                on_success=on_success,
+            )
         )
 
     def tailor_selected(self) -> None:

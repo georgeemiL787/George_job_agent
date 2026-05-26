@@ -1,4 +1,9 @@
-"""Reusable Playwright browser for batch detail-page fetches."""
+"""Reusable Playwright browser for batch detail-page fetches.
+
+Search scrapers (Bayt, GulfTalent, Indeed) still launch their own browser per
+``search()`` call; this pool avoids a second browser during orchestrator detail
+fetch. A future refactor can pass the pool context into slow scrapers for search.
+"""
 from __future__ import annotations
 
 from loguru import logger

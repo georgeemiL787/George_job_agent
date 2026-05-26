@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     prefilter_min_score: int = 40
     fast_run_max_scoring_candidates: int = 20
     deep_run_max_scoring_candidates: int = 40
+    linkedin_posted_within_hours: int = 168
 
     # Notifications (optional)
     notify_enabled: bool = False

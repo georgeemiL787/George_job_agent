@@ -20,6 +20,7 @@ PIPELINE_HEADERS = [
     "Score", "Tier", "Role Family", "Fit Summary",
     "Apply Link", "CV Ready", "Cover Letter Ready",
     "Status", "Applied Date", "Notes", "First Seen", "Last Updated",
+    "Scoring Status", "Artifact Status", "ATS Keywords",
 ]
 
 HEADER_FILL = PatternFill("solid", fgColor="1F3864")

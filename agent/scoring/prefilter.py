@@ -55,13 +55,11 @@ def prefilter_listing(listing: JobListing, settings: Settings | None = None) -> 
     if SENIORITY_REJECT.search(text):
         return PrefilterResult(False, 0, "Senior/experience requirement too high")
 
-    loc_text = f"{listing.title} {listing.location} {listing.card_snippet}".lower()
-    if not EGYPT_REMOTE.search(loc_text):
+    if not EGYPT_REMOTE.search(text):
         return PrefilterResult(False, 0, "Location outside Egypt without remote signal")
 
-    title_lower = listing.title.lower()
     has_ai = any(kw in text for kw in AI_KEYWORDS)
-    if GENERIC_SW.search(title_lower) and not has_ai:
+    if GENERIC_SW.search(text) and not has_ai:
         return PrefilterResult(False, 5, "Generic software role without AI keywords")
 
     score = 0

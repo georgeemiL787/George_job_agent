@@ -102,13 +102,19 @@ def status(
             detail = f" - {message}" if message else ""
             print(f"  {name}: {count} listings [{status}]{detail}")
 
-    print(f"\n{'Rank':>4}  {'Score':>5}  {'Tier':8}  {'Status':12}  {'Company':20}  Role")
-    print("-" * 90)
+    print(
+        f"\n{'Rank':>4}  {'Score':>5}  {'Tier':8}  {'Added':10}  "
+        f"{'Status':12}  {'Company':20}  Role"
+    )
+    print("-" * 100)
+    from agent.tracker.models import effective_score, format_added_date
+
     rows = tracker.list_pipeline_rows(drafts_only=drafts_only, include_applied=False)
     for row in rows[:20]:
+        added = format_added_date(row)[:10]
         print(
-            f"{row.rank:>4}  {row.score:>5}  {row.tier[:8]:8}  "
-            f"{row.status[:12]:12}  {row.company[:20]:20}  {row.title[:32]}"
+            f"{row.rank:>4}  {effective_score(row):>5}  {row.tier[:8]:8}  "
+            f"{added:10}  {row.status[:12]:12}  {row.company[:20]:20}  {row.title[:32]}"
         )
 
 

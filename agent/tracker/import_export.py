@@ -29,6 +29,33 @@ def _slug_from_notes(notes: str, record: RoleRecord) -> str:
     return make_slug(listing)
 
 
+def _record_from_row(row: tuple) -> RoleRecord:
+    record = RoleRecord(
+        slug="",
+        rank=int(row[0] or 0),
+        company=str(row[1] or ""),
+        title=str(row[2] or ""),
+        location=str(row[3] or ""),
+        source=str(row[4] or ""),
+        score=int(row[5] or 0),
+        tier=str(row[6] or ""),
+        role_family=str(row[7] or ""),
+        fit_summary=str(row[8] or ""),
+        apply_url=str(row[9] or ""),
+        cv_ready=_yes(row[10]),
+        letter_ready=_yes(row[11]),
+        status=str(row[12] or "Not Applied"),
+        applied_date=str(row[13]) if row[13] else None,
+        first_seen=str(row[15]) if len(row) > 15 and row[15] else None,
+        last_updated=str(row[16]) if len(row) > 16 and row[16] else None,
+        scoring_status=str(row[17]) if len(row) > 17 and row[17] else "",
+        artifact_status=str(row[18]) if len(row) > 18 and row[18] else "none",
+        ats_keywords=str(row[19]) if len(row) > 19 and row[19] else "",
+    )
+    record.slug = _slug_from_notes(str(row[14] or ""), record)
+    return record
+
+
 def import_tracker(settings: Settings, source: Path | None = None) -> int:
     source = source or (settings.tracker_path / "george_emil_job_tracker.xlsx")
     tracker = get_tracker(settings)
@@ -40,33 +67,18 @@ def import_tracker(settings: Settings, source: Path | None = None) -> int:
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not row or not row[1] or not row[2]:
             continue
-        record = RoleRecord(
-            slug="",
-            rank=int(row[0] or 0),
-            company=str(row[1] or ""),
-            title=str(row[2] or ""),
-            location=str(row[3] or ""),
-            source=str(row[4] or ""),
-            score=int(row[5] or 0),
-            tier=str(row[6] or ""),
-            role_family=str(row[7] or ""),
-            fit_summary=str(row[8] or ""),
-            apply_url=str(row[9] or ""),
-            cv_ready=_yes(row[10]),
-            letter_ready=_yes(row[11]),
-            status=str(row[12] or "Not Applied"),
-            applied_date=str(row[13]) if row[13] else None,
-            first_seen=str(row[15]) if len(row) > 15 and row[15] else None,
-            last_updated=str(row[16]) if len(row) > 16 and row[16] else None,
-        )
-        record.slug = _slug_from_notes(str(row[14] or ""), record)
-        tracker.upsert_record(record)
+        tracker.upsert_record(_record_from_row(row))
         count += 1
 
     if "Log" in wb.sheetnames:
+        existing = {(e.event, e.detail) for e in tracker.list_events()}
         for row in wb["Log"].iter_rows(min_row=2, values_only=True):
             if row and row[1]:
-                tracker.append_log(str(row[1] or ""), str(row[2] or ""))
+                key = (str(row[1] or ""), str(row[2] or ""))
+                if key in existing:
+                    continue
+                tracker.append_log(key[0], key[1])
+                existing.add(key)
 
     tracker.rerank()
     return count
@@ -107,6 +119,9 @@ def export_tracker(settings: Settings, output: Path | None = None) -> Path:
                 f"slug:{record.slug}",
                 record.first_seen or "",
                 record.last_updated or "",
+                record.scoring_status or "",
+                record.artifact_status or "none",
+                record.ats_keywords or "",
             ]
         )
 
