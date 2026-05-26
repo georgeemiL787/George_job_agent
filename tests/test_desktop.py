@@ -11,6 +11,8 @@ from PySide6.QtWidgets import QApplication
 
 from agent.config import Settings
 from agent.desktop.app import MainWindow
+from agent.desktop.widgets import RunDashboard, RunLiveStrip
+from agent.run_control import RunOptions, RunStatus, get_coordinator
 from agent.desktop.config_io import setup_is_missing, sqlite_url_for_workspace, write_env_values
 from agent.desktop.schedule import read_schedule, write_schedule
 from agent.desktop.services import DesktopService, initialize_local_tracker
@@ -158,10 +160,43 @@ def test_desktop_main_window_renders(tmp_path):
         assert "Roles" in tab_names
         assert "Role Detail" in tab_names
         assert "Add Role" in tab_names
-        assert "Run Monitor" in tab_names
+        assert "Run" in tab_names
+        assert hasattr(window, "run_live_strip")
+        assert hasattr(window, "run_dashboard")
         assert "Artifacts" in tab_names
         assert "Logs" in tab_names
         assert "Settings" in tab_names
     finally:
         window.close()
         app.processEvents()
+
+
+def test_run_widgets_update_from_coordinator(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    get_coordinator().reset()
+    settings = _settings(tmp_path)
+    strip = RunLiveStrip()
+    dashboard = RunDashboard()
+
+    get_coordinator().try_start_run(RunOptions(mode="fast"))
+    get_coordinator().set_phase("score")
+    get_coordinator().update_progress(score_target=5, scored=2)
+
+    progress = get_coordinator().get_progress().to_dict()
+    events = [e.to_dict() for e in get_coordinator().get_events()]
+
+    strip.update_state(active=True, progress=progress, estimate=None, status_text="Running — score")
+    dashboard.update_state(
+        active=True,
+        progress=progress,
+        estimate=None,
+        events=events,
+        report={"scrapers": {"wuzzuf": {"count": 3, "status": "ok"}}},
+        status_text="Running — score",
+    )
+
+    assert strip.chip_scored.value.text() == "2"
+    assert dashboard.activity_list.count() >= 1
+    get_coordinator().finish_run(RunStatus.COMPLETE)
+    get_coordinator().reset()
+    app.processEvents()

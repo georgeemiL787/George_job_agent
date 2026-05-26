@@ -11,10 +11,14 @@ from typing import Any
 from agent.artifacts import build_cv_artifact
 from agent.config import Settings
 from agent.cv.master_cv import load_master_cv_facts
+from agent.desktop.config_io import setup_is_missing
+from agent.desktop.role_context import listing_from_role, score_result_from_role
+from agent.tailor_gates import should_tailor_cv
 from agent.manual_role import process_manual_role
-from agent.observability.run_report import load_latest_run_report
-from agent.orchestrator import run as run_agent
+from agent.observability.run_report import load_active_run_report, load_latest_run_report
 from agent.package_role import package_role
+from agent.run_control import RunOptions, get_coordinator
+from agent.run_service import run_agent
 from agent.search.base import JobListing
 from agent.search.linkedin_import import RoleDraft, draft_to_listing
 from agent.sync_master import sync_master_tex
@@ -99,8 +103,92 @@ class DesktopService:
         role = tracker.get_row_by_slug(slug)
         return role_payload(role, self.settings) if role else None
 
-    def run_cycle(self, *, dry_run: bool = False) -> None:
-        run_agent(manual=True, dry_run=dry_run)
+    def run_cycle(
+        self,
+        *,
+        dry_run: bool = False,
+        mode: str = "fast",
+        sources: set[str] | None = None,
+    ) -> None:
+        run_agent(
+            manual=True,
+            dry_run=dry_run,
+            options=RunOptions(mode=mode, dry_run=dry_run, sources=sources),
+        )
+
+    def retry_failed_scores(self, limit: int = 20) -> int:
+        from agent.memory.store import MemoryStore
+        from agent.scoring.scorer import score_listing
+
+        tracker = get_tracker(self.settings)
+        tracker.load_or_create()
+        profile = MemoryStore(self.settings).load_profile()
+        failed = tracker.list_by_scoring_status("failed", limit=limit)
+        retried = 0
+        for role in failed:
+            listing = JobListing(
+                title=role.title,
+                company=role.company,
+                location=role.location,
+                source=role.source,
+                apply_url=role.apply_url,
+                slug=role.slug,
+            )
+            result = score_listing(listing, profile, self.settings)
+            if result.get("scoring_failed"):
+                tracker.set_role_scoring(
+                    role.slug,
+                    scoring_status="failed",
+                    failure_reason=result.get("failure_reason", ""),
+                )
+                continue
+            tracker.upsert_role(
+                listing,
+                result,
+                scoring_status="skipped" if result["tier"] == "skip" else "scored",
+                failure_reason="",
+            )
+            retried += 1
+        return retried
+
+    def cancel_run(self) -> None:
+        get_coordinator().request_cancel()
+
+    def is_run_active(self) -> bool:
+        return get_coordinator().is_active()
+
+    def get_run_progress(self) -> dict[str, Any]:
+        return get_coordinator().get_progress().to_dict()
+
+    def get_run_events(self) -> list[dict[str, Any]]:
+        return [e.to_dict() for e in get_coordinator().get_events()]
+
+    def get_run_options(self) -> dict[str, Any]:
+        opts = get_coordinator().get_options()
+        if not opts:
+            return {}
+        return {
+            "mode": opts.mode,
+            "dry_run": opts.dry_run,
+            "sources": sorted(opts.sources) if opts.sources else None,
+        }
+
+    def active_run_report(self) -> dict | None:
+        return load_active_run_report(self.settings)
+
+    def resolved_config_summary(self) -> str:
+        s = self.settings
+        lines = [
+            f"Enabled sources: {', '.join(sorted(s.enabled_source_set()))}",
+            f"Skip slow (fast): {s.skip_slow_sources}",
+            f"Indeed default: {s.enable_indeed}",
+            f"Max scoring candidates: {s.max_scoring_candidates}",
+            f"Fast cap: {s.fast_run_max_scoring_candidates} | Deep cap: {s.deep_run_max_scoring_candidates}",
+            f"Scoring model: {s.scoring_model}",
+        ]
+        if s.scoring_model_fast:
+            lines.append(f"Fast scoring model: {s.scoring_model_fast}")
+        return "\n".join(lines)
 
     def add_manual_role(self, body: dict[str, str]) -> dict[str, Any]:
         draft = RoleDraft(
@@ -117,37 +205,48 @@ class DesktopService:
         return {"score": result, "role": role}
 
     def tailor_role(self, slug: str) -> dict[str, str | None]:
+        if setup_is_missing(self.settings):
+            raise ValueError(
+                "OpenRouter API key is not configured. Open Settings and add your OPENROUTER_API_KEY."
+            )
+
         tracker = get_tracker(self.settings)
         tracker.load_or_create()
         role = tracker.get_row_by_slug(slug)
         if not role:
-            raise ValueError(f"Slug not found: {slug}")
+            raise ValueError(f"Role not found: {slug}")
 
-        listing = JobListing(
-            title=role.title,
-            company=role.company,
-            location=role.location,
-            source=role.source or "manual",
-            apply_url=role.apply_url,
-            slug=slug,
-        )
-        score_result = {
-            "score": role.score or self.settings.min_score_to_tailor,
-            "tier": role.tier or "medium",
-            "role_family": role.role_family or "adjacent",
-            "key_matches": [],
-            "fit_summary": role.fit_summary,
-        }
-        master_facts = load_master_cv_facts(
-            self.settings,
-            role_family=score_result["role_family"],
-            company=listing.company,
-        )
+        score_result = score_result_from_role(role)
+        score = int(score_result.get("score") or 0)
+        if not should_tailor_cv(score, self.settings):
+            raise ValueError(
+                f"Score {score} is below the minimum {self.settings.min_score_to_tailor} required to tailor a CV."
+            )
+
+        listing = listing_from_role(role, self.settings)
+        if len((listing.description or "").strip()) < 80:
+            raise ValueError(
+                "Not enough job description text for tailoring. Re-run search to fetch descriptions, "
+                "or add a role manually with a full description."
+            )
+
+        try:
+            master_facts = load_master_cv_facts(
+                self.settings,
+                role_family=str(score_result.get("role_family") or ""),
+                company=listing.company,
+            )
+        except FileNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+
         artifact = build_cv_artifact(listing, score_result, master_facts, self.settings)
         if not artifact.ok:
-            raise ValueError("; ".join(artifact.errors or ["CV tailoring failed"]))
+            detail = "; ".join(artifact.errors or ["CV tailoring failed"])
+            raise ValueError(detail)
+
         tracker.mark_cv_ready(slug)
         tracker.mark_draft(slug)
+        tracker.set_artifact_status(slug, "cv_done")
         tracker.save()
         return {
             "tex_path": str(artifact.tex_path) if artifact.tex_path else None,
@@ -197,11 +296,13 @@ def _playwright_install_cmd() -> list[str]:
 
     When running as a PyInstaller bundle sys.executable is the frozen .exe,
     so 'sys.executable -m playwright' does not work.  Instead we invoke the
-    playwright.cmd CLI that is bundled inside _internal/playwright/driver/.
+    bundled node.exe with the playwright cli.js script.
     """
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        driver = Path(sys._MEIPASS) / "playwright" / "driver" / "playwright.cmd"
-        return [str(driver), "install", "chromium"]
+        driver_dir = Path(sys._MEIPASS) / "playwright" / "driver"
+        node_exe = driver_dir / "node.exe"
+        cli_js = driver_dir / "package" / "cli.js"
+        return [str(node_exe), str(cli_js), "install", "chromium"]
     return [sys.executable, "-m", "playwright", "install", "chromium"]
 
 
@@ -234,4 +335,37 @@ def check_pdflatex(latex_bin: str) -> tuple[bool, str]:
     path = shutil.which(latex_bin)
     if path:
         return True, f"LaTeX found: {path}"
-    return False, ".tex-only mode is active because pdflatex was not found."
+    return (
+        False,
+        f"'{latex_bin}' not found on PATH. "
+        "Install MiKTeX (winget install MiKTeX.MiKTeX) or TeX Live to enable PDF output. "
+        "The agent will still produce .tex files in tex-only mode.",
+    )
+
+
+def install_miktex() -> str:
+    """Install MiKTeX via winget (Windows package manager)."""
+    winget = shutil.which("winget")
+    if not winget:
+        raise RuntimeError(
+            "winget is not available on this system. "
+            "Download MiKTeX manually from https://miktex.org/download"
+        )
+    result = subprocess.run(
+        [
+            winget,
+            "install",
+            "--id", "MiKTeX.MiKTeX",
+            "--silent",
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = "\n".join(part for part in [result.stdout, result.stderr] if part)
+    if result.returncode not in (0, -1978335189):  # 0 = success, -1978335189 = already installed
+        raise RuntimeError(output or "MiKTeX installation failed.")
+    return output or "MiKTeX installed. Restart the app and check setup again."
+

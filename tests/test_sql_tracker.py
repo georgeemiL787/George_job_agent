@@ -46,3 +46,25 @@ def test_sql_tracker_upsert_and_status(tmp_path):
     assert role.status == "Draft"
     assert tracker.get_all_slugs() == {"co-ai-intern-manual"}
     assert tracker.list_events()
+
+
+def test_start_run_and_role_status_columns(tmp_path):
+    tracker = SqlTracker(_settings(tmp_path))
+    tracker.load_or_create()
+    run_id = tracker.start_run(True, False, {"mode": "fast"})
+    assert run_id == 1
+    tracker.upsert_role(
+        _listing(),
+        {"score": 70, "tier": "strong", "role_family": "ai_intern", "fit_summary": "ok"},
+        run_id=run_id,
+        scoring_status="scored",
+        artifact_status="none",
+    )
+    role = tracker.get_row_by_slug("co-ai-intern-manual")
+    assert role is not None
+    assert role.run_id == 1
+    assert role.scoring_status == "scored"
+    tracker.set_artifact_status("co-ai-intern-manual", "cv_done")
+    role = tracker.get_row_by_slug("co-ai-intern-manual")
+    assert role.artifact_status == "cv_done"
+    tracker.finish_run(run_id, "complete", {"status": "complete"})

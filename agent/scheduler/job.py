@@ -1,24 +1,16 @@
 """APScheduler job loop for CLI-only scheduling."""
 from __future__ import annotations
 
-import threading
-
 from loguru import logger
 
-_run_lock = threading.Lock()
+from agent.run_control import RunOptions
 
 
 def run_sync() -> None:
     """Synchronous scheduled run with overlap protection."""
-    from agent.orchestrator import run
+    from agent.run_service import run_agent
 
-    if not _run_lock.acquire(blocking=False):
-        logger.warning("Scheduled run skipped because another run is active")
-        return
-    try:
-        run(manual=False, dry_run=False)
-    finally:
-        _run_lock.release()
+    run_agent(manual=False, dry_run=False, options=RunOptions(mode="fast"))
 
 
 def start_scheduler() -> None:

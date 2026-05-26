@@ -33,9 +33,9 @@ def build_cv_artifact(
     master_facts: str,
     settings: Settings,
 ) -> ArtifactResult:
-    tex_path = tailor_cv(listing, score_result, master_facts, settings)
+    tex_path, tailor_errors = tailor_cv(listing, score_result, master_facts, settings)
     if not tex_path:
-        return ArtifactResult(errors=["CV tailoring failed"])
+        return ArtifactResult(errors=tailor_errors or ["CV tailoring failed"])
 
     if not _pdflatex_available(settings.latex_bin):
         logger.warning("pdflatex not available — CV saved as .tex only")

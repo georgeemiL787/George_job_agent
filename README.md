@@ -2,13 +2,13 @@
 
 Native Windows desktop app and CLI for George Emil Sadek's AI/ML job search workflow.
 
-The app searches Egyptian job boards, scores roles against George's profile, tailors ATS-friendly CVs and cover letters, tracks roles locally in SQLite, and exports Excel workbooks when needed. It is local-first: no website deployment, no Supabase requirement, and no public dashboard.
+The app searches Egyptian job boards, scores roles against George's profile, tailors ATS-friendly CVs and cover letters, tracks roles locally in SQLite, and exports Excel workbooks when needed. It is local-first: no website deployment and no public dashboard.
 
 ## Prerequisites
 
 - Windows 10/11
 - Python 3.11 or later for source runs
-- Playwright Chromium for the Indeed scraper
+- Playwright Chromium for Bayt, GulfTalent, and Indeed (deep runs)
 - TeX Live or MiKTeX is optional. Without `pdflatex`, the app saves `.tex` artifacts only.
 
 ## Install For Source Runs
@@ -26,54 +26,69 @@ Start the desktop app:
 .\.venv\Scripts\python.exe -m agent desktop
 ```
 
-The first-run setup wizard can write `.env`, initialize SQLite, verify Playwright, and check optional LaTeX support.
+## Run modes
+
+| Mode | Sources | Indeed | Playwright scrapers |
+|------|---------|--------|---------------------|
+| **Fast** (default) | Wuzzuf, LinkedIn, enabled httpx sources | Off | Skipped when `SKIP_SLOW_SOURCES=true` |
+| **Deep** | All enabled + Indeed | On | Bayt, GulfTalent, Indeed |
+
+- **Fast run** / **Deep run** buttons on the Dashboard
+- **Stop Run** cancels cooperatively between scrapers, scores, and artifacts
+- Live progress: `Collected | Fresh | Scored | Tailored | Failed`
+- Run reports: `workspace/logs/runs/latest.json` (updated each phase)
 
 ## Local Config
 
-Default local settings:
+See [`.env.example`](.env.example) for all options. Key settings:
 
 ```env
-OPENROUTER_API_KEY=your-openrouter-api-key-here
-WORKSPACE_DIR=workspace
-DATABASE_URL=sqlite:///workspace/tracker/job_agent.db
-CV_VARIATIONS_DIR=cv_variations
-LATEX_BIN=pdflatex
-SCHEDULE_INTERVAL_HOURS=4
-MAX_ROLES_PER_RUN=20
-MIN_SCORE_TO_TAILOR=60
+ENABLED_SOURCES=wuzzuf,linkedin,bayt
+SKIP_SLOW_SOURCES=true
+ENABLE_INDEED=false
+SCORING_MODEL_FAST=
+MAX_SCORING_CANDIDATES=30
+PERSIST_DRY_RUN_SCORES=true
 ```
 
-The tracker database is local SQLite. The existing workbook at `workspace/tracker/george_emil_job_tracker.xlsx` is imported once when the database is empty, and Excel export remains available from the app and CLI.
+`linkedin` in `ENABLED_SOURCES` maps to the `linkedin_jobs` scraper internally.
+
+Source toggles in the desktop UI can be saved to `workspace/config/run_sources.json`.
+
+## Repository layout
+
+| Path | Purpose |
+|------|---------|
+| `agent/` | Application code (orchestrator, scrapers, desktop, tracker) |
+| `agent/desktop/assets/` | App icon (`app.ico`, `app.png`) |
+| `workspace/memory/` | Seeded profile/CV facts (bundled in EXE) |
+| `workspace/tracker/` | SQLite DB + optional Excel seed workbook |
+| `cv_variations/` | Canonical CV PDF archive for tailoring context |
+| `tests/` | Pytest suite |
+| `packaging/` | PyInstaller spec |
+| `scripts/` | `build_desktop.ps1`, `clean_local.ps1` |
+
+Runtime outputs (gitignored): `workspace/logs/`, `workspace/cv/tailored/`, `build/`, `dist/`.
 
 ## Desktop Screens
 
-- Dashboard: run full/dry cycles, see scraper health, top roles, and schedule status.
-- Roles: browse, filter, import/export Excel, and open role details.
-- Role Detail: tailor CV, approve, package, mark applied, and open artifact folders.
-- Add Role: paste a LinkedIn/manual role and process it through scoring/tailoring.
-- Run Monitor: view local logs.
-- Settings: run setup checks, open workspace, and sync the master CV stub.
-
-The scheduler runs only while the desktop app is open. Use Off / 1h / 2h / 4h from the Dashboard.
+- **Dashboard**: Fast/Deep/Dry runs, source toggles, live progress, scraper health, scheduler
+- **Roles**: Pipeline table with scoring/artifact status; retry failed scores
+- **Role Detail**: Fit summary, failures, tailor/approve/package
+- **Run**: Live phase stepper, activity feed, scraper status, and ETA while a run is active
+- **Settings**: Workspace paths, resolved config, setup wizard
 
 ## CLI Reference
 
 | Command | Description |
 |---|---|
-| `python -m agent desktop` | Start the native Windows desktop app |
-| `python -m agent run` | Full search, score, tailor, track cycle |
-| `python -m agent run --dry-run` | Score only, nothing written to disk |
-| `python -m agent status` | Print top open roles and latest scraper health |
-| `python -m agent add-role` | Add a role interactively, from file, or flags |
-| `python -m agent add-linkedin` | Same, defaulting source to LinkedIn |
-| `python -m agent tailor <slug>` | Force-tailor CV for one tracked role |
-| `python -m agent review <slug>` | Review artifacts and optionally approve |
-| `python -m agent approve <slug>` | Mark role Ready |
-| `python -m agent package <slug>` | Bundle role artifacts |
-| `python -m agent mark-applied <slug>` | Mark role applied |
-| `python -m agent import-tracker` | Import Excel tracker into SQLite |
-| `python -m agent export-tracker` | Export SQLite tracker to Excel |
-| `python -m agent schedule` | Start CLI scheduler while terminal is open |
+| `python -m agent desktop` | Start the desktop app |
+| `python -m agent run` | Full cycle (fast by default) |
+| `python -m agent run --deep` | Deep cycle (Indeed + slow scrapers) |
+| `python -m agent run --dry-run` | Score only |
+| `python -m agent status` | Top roles + active run progress if running |
+| `python -m agent scrape-health` | Quick card collect per source |
+| `python -m agent schedule` | CLI scheduler (terminal must stay open) |
 
 ## Build The Windows App
 
@@ -81,40 +96,20 @@ The scheduler runs only while the desktop app is open. Use Off / 1h / 2h / 4h fr
 .\scripts\build_desktop.ps1 -Clean
 ```
 
-Build output:
-
-```text
-dist\GeorgeJobAgent\GeorgeJobAgent.exe
-```
-
-The PyInstaller build includes app code, templates, workspace memory files, tracker workbook, role templates, and CV variation PDFs.
-
-## Output Files
-
-| Path | Contents |
-|---|---|
-| `workspace/tracker/job_agent.db` | Local SQLite tracker database |
-| `workspace/tracker/george_emil_job_tracker.xlsx` | Excel import/export workbook |
-| `workspace/cv/tailored/<slug>.tex` | Tailored LaTeX CV |
-| `workspace/cv/tailored/<slug>.pdf` | Optional compiled PDF |
-| `workspace/cover_letters/<slug>_letter.tex` | Cover letter LaTeX |
-| `workspace/cover_letters/<slug>_letter.pdf` | Optional compiled PDF |
-| `workspace/logs/agent.log` | App/agent log |
-| `workspace/logs/runs/*.json` | Structured run reports |
-| `workspace/packages/<slug>/` | Application package folder |
+Output: `dist\GeorgeJobAgent\GeorgeJobAgent.exe`
 
 ## Tests
 
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m pytest tests/ -v
-.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m pytest tests/ -q
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for cleanup and commit guidelines.
 
 ## Rules
 
 - The app never invents qualifications, employers, or metrics.
 - Applications are marked applied only when you confirm them.
 - Existing applied/interviewed rows are not overwritten.
-- `.tex` artifacts are valid output when `pdflatex` is unavailable.
-- Keep `.env` private; rotate any previously exposed OpenRouter key.
+- Keep `.env` private; rotate any exposed OpenRouter key.

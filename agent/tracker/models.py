@@ -33,6 +33,13 @@ class RoleRecord:
     applied_date: str | None = None
     first_seen: str | None = None
     last_updated: str | None = None
+    ats_keywords: str = ""  # comma-separated ATS terms from JD
+    run_id: int | None = None
+    scoring_status: str = ""
+    artifact_status: str = "none"
+    failure_reason: str = ""
+    source_payload: str = ""
+    score_payload: str = ""
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "RoleRecord":
@@ -54,6 +61,13 @@ class RoleRecord:
             applied_date=_iso(data.get("applied_date")),
             first_seen=_iso(data.get("first_seen")),
             last_updated=_iso(data.get("last_updated")),
+            ats_keywords=str(data.get("ats_keywords") or ""),
+            run_id=int(data["run_id"]) if data.get("run_id") is not None else None,
+            scoring_status=str(data.get("scoring_status") or ""),
+            artifact_status=str(data.get("artifact_status") or "none"),
+            failure_reason=str(data.get("failure_reason") or ""),
+            source_payload=str(data.get("source_payload") or ""),
+            score_payload=str(data.get("score_payload") or ""),
         )
 
     def to_api_dict(self) -> dict[str, Any]:
@@ -75,6 +89,13 @@ class RoleRecord:
             "applied_date": self.applied_date,
             "first_seen": self.first_seen,
             "last_updated": self.last_updated,
+            "ats_keywords": self.ats_keywords,
+            "run_id": self.run_id,
+            "scoring_status": self.scoring_status,
+            "artifact_status": self.artifact_status,
+            "failure_reason": self.failure_reason,
+            "source_payload": self.source_payload,
+            "score_payload": self.score_payload,
         }
 
 

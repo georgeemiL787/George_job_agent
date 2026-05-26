@@ -6,6 +6,8 @@ block_cipher = None
 root = Path(SPECPATH).resolve().parent
 
 datas = [
+    (str(root / "agent" / "desktop" / "assets"), "agent/desktop/assets"),
+    (str(root / "agent" / "desktop" / "theme"), "agent/desktop/theme"),
     (str(root / "agent" / "templates"), "agent/templates"),
     (str(root / "agent" / "cv" / "templates"), "agent/cv/templates"),
     (str(root / "agent" / "cover_letter" / "templates"), "agent/cover_letter/templates"),
@@ -53,6 +55,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(root / "agent" / "desktop" / "assets" / "app.ico"),
 )
 
 coll = COLLECT(

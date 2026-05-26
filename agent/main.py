@@ -44,11 +44,22 @@ def _setup_logging() -> None:
 @app.command()
 def run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Score only, no files written."),
+    fast: bool = typer.Option(False, "--fast", help="Fast run: fewer sources, no Indeed."),
+    deep: bool = typer.Option(False, "--deep", help="Deep run: all sources including Indeed."),
 ) -> None:
     """Run a full search-score-tailor cycle."""
     _setup_logging()
-    from agent.orchestrator import run as _run
-    _run(manual=True, dry_run=dry_run)
+    from agent.run_control import RunOptions
+    from agent.run_service import run_agent_exit_code
+
+    mode = "deep" if deep else "fast"
+    raise typer.Exit(
+        run_agent_exit_code(
+            manual=True,
+            dry_run=dry_run,
+            options=RunOptions(mode=mode, dry_run=dry_run),
+        )
+    )
 
 
 @app.command()
@@ -57,12 +68,28 @@ def status(
 ) -> None:
     """Print top roles from the tracker and last scraper run health."""
     _setup_logging()
-    from agent.observability.run_report import load_latest_run_report
+    from agent.observability.run_report import load_active_run_report, load_latest_run_report
+    from agent.run_control import get_coordinator
     from agent.tracker import get_tracker
 
     settings = get_settings()
     tracker = get_tracker(settings)
     tracker.load_or_create()
+
+    active = load_active_run_report(settings)
+    if active:
+        prog = active.get("progress") or {}
+        print(
+            f"\nActive run #{active.get('run_id')} — {active.get('status')} "
+            f"phase={active.get('phase')}"
+        )
+        print(
+            f"  Collected: {prog.get('collected', 0)} | Fresh: {prog.get('fresh', 0)} | "
+            f"Scored: {prog.get('scored', 0)} | Tailored: {prog.get('tailored', 0)}"
+        )
+    elif get_coordinator().is_active():
+        p = get_coordinator().get_progress()
+        print(f"\nActive run in progress — phase={p.phase}")
 
     latest = load_latest_run_report(settings)
     if latest:
@@ -396,6 +423,18 @@ def import_tracker_cmd(
     settings = get_settings()
     count = import_tracker(settings, Path(source) if source else None)
     print(f"Imported {count} roles into the local SQL tracker.")
+
+
+@app.command("scrape-health")
+def scrape_health_cmd(
+    deep: bool = typer.Option(False, "--deep", help="Use deep source preset."),
+) -> None:
+    """Collect a few cards per enabled source and print health."""
+    _setup_logging()
+    from agent.scrape_health import print_scrape_health
+
+    mode = "deep" if deep else "fast"
+    print_scrape_health(get_settings(), mode=mode)
 
 
 @app.command()

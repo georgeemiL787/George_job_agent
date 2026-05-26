@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Loading</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #05050f; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+canvas { border-radius: 12px; display: block; max-width: 100%; }
+</style>
+</head>
+<body>
+<canvas id="dp"></canvas>
+<script>
+(function(){
+  const cv = document.getElementById('dp');
+  const ct = cv.getContext('2d');
+  const W = 680, H = 480;
+  cv.width = W; cv.height = H;
+
+  const N = 12, L1 = 115, L2 = 90, g = 9.8, dt = 0.038;
+  const OX = W / 2, OY = 170, TRAIL = 380;
+
+  const msgs = [
+    '12 pendulums — one grain of difference each',
+    'watch them drift apart: the butterfly effect, live',
+    'deterministic chaos: known rules, unknowable futures',
+    'this is how the universe works behind the curtain',
+    'some things just take time to unfold'
+  ];
+  let mi = 0, mt = 0, fr = 0;
+
+  const pends = Array.from({ length: N }, (_, i) => ({
+    t1: Math.PI * 0.88 + i * 0.00025,
+    t2: Math.PI * 0.52,
+    w1: 0, w2: 0,
+    trail: [],
+    hue: (i / N) * 360
+  }));
+
+  function step(p) {
+    for (let s = 0; s < 5; s++) {
+      const d = p.t1 - p.t2;
+      const D = 3 - Math.cos(2 * d);
+      const a1 = (-3*g*Math.sin(p.t1) - g*Math.sin(p.t1 - 2*p.t2)
+        - 2*Math.sin(d)*(p.w2*p.w2*L2 + p.w1*p.w1*L1*Math.cos(d))) / (L1 * D);
+      const a2 = (2*Math.sin(d)*(2*p.w1*p.w1*L1 + 2*g*Math.cos(p.t1)
+        + p.w2*p.w2*L2*Math.cos(d))) / (L2 * D);
+      p.w1 += a1 * dt; p.w2 += a2 * dt;
+      p.t1 += p.w1 * dt; p.t2 += p.w2 * dt;
+    }
+    const x1 = OX + L1 * Math.sin(p.t1), y1 = OY + L1 * Math.cos(p.t1);
+    const x2 = x1 + L2 * Math.sin(p.t2), y2 = y1 + L2 * Math.cos(p.t2);
+    p.trail.push([x2, y2, x1, y1]);
+    if (p.trail.length > TRAIL) p.trail.shift();
+    return [x1, y1, x2, y2];
+  }
+
+  function draw() {
+    fr++;
+    ct.fillStyle = 'rgba(5,5,18,0.09)';
+    ct.fillRect(0, 0, W, H);
+
+    const pos = pends.map(step);
+
+    pends.forEach((p) => {
+      if (p.trail.length < 2) return;
+      ct.beginPath();
+      ct.moveTo(p.trail[0][0], p.trail[0][1]);
+      for (let j = 1; j < p.trail.length; j++)
+        ct.lineTo(p.trail[j][0], p.trail[j][1]);
+      ct.strokeStyle = `hsla(${p.hue},82%,65%,0.7)`;
+      ct.lineWidth = 1.4;
+      ct.stroke();
+      const [lx, ly] = p.trail[p.trail.length - 1];
+      ct.beginPath(); ct.arc(lx, ly, 3, 0, Math.PI * 2);
+      ct.fillStyle = `hsl(${p.hue},90%,78%)`; ct.fill();
+    });
+
+    pends.forEach((p, i) => {
+      if (!pos[i]) return;
+      const [x1, y1, x2, y2] = pos[i];
+      ct.beginPath(); ct.moveTo(OX, OY); ct.lineTo(x1, y1); ct.lineTo(x2, y2);
+      ct.strokeStyle = `hsla(${p.hue},40%,60%,0.09)`;
+      ct.lineWidth = 1; ct.stroke();
+    });
+
+    ct.beginPath(); ct.arc(OX, OY, 4.5, 0, Math.PI * 2);
+    ct.fillStyle = 'rgba(255,255,255,0.55)'; ct.fill();
+
+    mt++;
+    if (mt > 260) { mt = 0; mi = (mi + 1) % msgs.length; }
+    const raw = mt < 28 ? mt / 28 : mt > 232 ? (260 - mt) / 28 : 1;
+    ct.font = '13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ct.textAlign = 'center';
+    ct.fillStyle = `rgba(255,255,255,${(raw * 0.38).toFixed(2)})`;
+    ct.fillText(msgs[mi], W / 2, H - 12);
+
+    const dot = Math.floor(fr / 22) % 5;
+    for (let d = 0; d < 5; d++) {
+      ct.beginPath();
+      ct.arc(W / 2 - 24 + d * 12, H - 36, dot === d ? 3 : 1.8, 0, Math.PI * 2);
+      ct.fillStyle = dot === d ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.14)';
+      ct.fill();
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  ct.fillStyle = 'rgb(5,5,18)';
+  ct.fillRect(0, 0, W, H);
+  draw();
+})();
+</script>
+</body>
+</html>

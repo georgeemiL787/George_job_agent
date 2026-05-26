@@ -61,8 +61,15 @@ _ROLE_FAMILY_PDF: dict[str, str] = {
     "ai_engineer": "george_emil_aiml_engineer_cv.pdf",
     "ml_engineer": "george_emil_cv.pdf",
     "cv_engineer": "george_emil_cv.pdf",
+    "nlp_engineer": "george_emil_aiml_engineer_cv.pdf",
+    "rag_engineer": "george_emil_aiml_engineer_cv.pdf",
     "data_scientist": "george_emil_cv.pdf",
     "ai_intern": "george_emil_cv.pdf",
+    "ml_intern": "george_emil_cv.pdf",
+    "cv_intern": "george_emil_cv.pdf",
+    "nlp_intern": "george_emil_aiml_engineer_cv.pdf",
+    "rag_intern": "george_emil_aiml_engineer_cv.pdf",
+    "data_intern": "george_emil_cv.pdf",
     "adjacent": "george_emil_cv.pdf",
 }
 
@@ -71,8 +78,15 @@ _SECTION_ORDER: dict[str, str] = {
     "ai_engineer": "Summary → Skills (LLM/RAG/APIs first) → Experience → Projects → Education",
     "ml_engineer": "Summary → Skills (PyTorch/TF/deployment) → Experience → Projects → Education",
     "cv_engineer": "Summary → Experience (Cellula first) → Skills → Projects → Education",
+    "nlp_engineer": "Summary → Skills (NLP/transformers/text first) → Experience → Projects → Education",
+    "rag_engineer": "Summary → Skills (RAG/LangChain/vector-DBs first) → Experience → Projects → Education",
     "data_scientist": "Summary → Skills (Python/SQL/Pandas) → Experience → Projects → Education",
     "ai_intern": "Summary (final-year first) → Skills → Experience → Projects → Education",
+    "ml_intern": "Summary (final-year first) → Skills (PyTorch/TF) → Experience → Projects → Education",
+    "cv_intern": "Summary (final-year first) → Skills (OpenCV/YOLO) → Experience → Projects → Education",
+    "nlp_intern": "Summary (final-year first) → Skills (NLP/transformers) → Experience → Projects → Education",
+    "rag_intern": "Summary (final-year first) → Skills (RAG/LangChain) → Experience → Projects → Education",
+    "data_intern": "Summary (final-year first) → Skills (Python/SQL/Pandas) → Experience → Projects → Education",
 }
 
 

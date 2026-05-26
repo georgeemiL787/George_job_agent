@@ -13,8 +13,9 @@ workspace/logs/
 workspace/cv/tailored/
 workspace/cover_letters/
 workspace/packages/
-workspace/config/
+workspace/config/run_sources.json
 workspace/tracker/*.db
+workspace/tracker/*.db-journal
 
 # LaTeX aux
 *.aux

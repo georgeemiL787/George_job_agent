@@ -1,97 +1,67 @@
-"""Bayt Egypt scraper — httpx + BeautifulSoup4."""
+"""Bayt Egypt scraper — Playwright headless (bypasses Cloudflare 403).
+
+Bayt blocks httpx/requests with a 403 Cloudflare challenge.
+Using Playwright with a real Chromium binary bypasses this protection.
+"""
 from __future__ import annotations
 
 import random
 import time
 from urllib.parse import urljoin
 
-import httpx
-from bs4 import BeautifulSoup
 from loguru import logger
 
 from agent.search.base import BaseScraper, JobListing
 
 BASE_URL = "https://www.bayt.com/en/egypt/jobs/"
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Referer": "https://www.bayt.com/",
-}
 MAX_PAGES = 3
-RETRY_LIMIT = 3
-
-
-class ScraperBlocked(Exception):
-    """Raised when Bayt blocks automated access."""
+RETRY_LIMIT = 2
 
 
 def _sleep() -> None:
-    time.sleep(1.2 + random.uniform(-0.3, 0.4))
-
-
-def _get_with_retry(client: httpx.Client, url: str) -> httpx.Response | None:
-    delay = 2.0
-    for attempt in range(RETRY_LIMIT):
-        try:
-            resp = client.get(url, headers=HEADERS, follow_redirects=True, timeout=15)
-            if resp.status_code in (429, 500, 502, 503, 504):
-                logger.warning(f"Bayt {resp.status_code} on {url}, retry {attempt+1}")
-                time.sleep(delay)
-                delay *= 2
-                continue
-            if resp.status_code == 403:
-                raise ScraperBlocked("HTTP 403 Forbidden")
-            if resp.status_code == 404:
-                return None
-            resp.raise_for_status()
-            return resp
-        except httpx.TimeoutException:
-            logger.warning(f"Bayt timeout on {url}, retry {attempt+1}")
-            time.sleep(delay)
-            delay *= 2
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"Bayt HTTP error: {e}")
-            return None
-    return None
+    time.sleep(1.5 + random.uniform(-0.3, 0.5))
 
 
 def _query_to_slug(query: str) -> str:
-    """Convert 'AI engineer Cairo' -> 'ai-engineer-cairo'"""
-    return query.lower().replace(" ", "-").replace("/", "-")
-
-
-def _fetch_description(client: httpx.Client, url: str) -> str:
-    _sleep()
-    resp = _get_with_retry(client, url)
-    if not resp:
-        return ""
-    soup = BeautifulSoup(resp.text, "lxml")
-    # Bayt uses div[id*="jb-description"] or section.jb-details
-    desc = (
-        soup.find("div", id=lambda x: x and "jb-description" in x)
-        or soup.find("div", {"class": lambda c: c and "jb-description" in c if c else False})
-        or soup.find("section", {"class": lambda c: c and "jb-description" in c if c else False})
-    )
-    if desc:
-        return desc.get_text(separator="\n", strip=True)
-    # Broader fallback
-    main = soup.find("main") or soup.find("article")
-    return main.get_text(separator="\n", strip=True)[:3000] if main else ""
+    """Convert 'AI engineer Cairo' → 'ai-engineer-cairo-jobs'"""
+    slug = query.lower().replace(" ", "-").replace("/", "-")
+    return f"{slug}-jobs"
 
 
 class BaytScraper(BaseScraper):
     SOURCE = "bayt"
 
-    def search(self, queries: list[str], max_results: int = 20) -> list[JobListing]:
+    def __init__(self) -> None:
         self.health_status = "empty"
         self.health_message = ""
+        self._timeout_ms = 20000
+
+    def set_timeout(self, seconds: int) -> None:
+        self._timeout_ms = seconds * 1000
+
+    def search(self, queries: list[str], max_results: int = 20) -> list[JobListing]:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.health_status = "error"
+            self.health_message = "playwright not installed"
+            logger.error("playwright not installed — run: python -m playwright install chromium")
+            return []
+
         results: list[JobListing] = []
-        with httpx.Client() as client:
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="en-US",
+            )
+            search_page = context.new_page()
+
             for query in queries:
                 if len(results) >= max_results:
                     break
@@ -101,78 +71,146 @@ class BaytScraper(BaseScraper):
                     if len(results) >= max_results:
                         break
 
-                    # Bayt URL: /en/egypt/jobs/{slug}-jobs/?page={n}
-                    if page == 1:
-                        url = f"{BASE_URL}{slug}-jobs/"
-                    else:
-                        url = f"{BASE_URL}{slug}-jobs/?page={page}"
-
+                    url = f"{BASE_URL}{slug}/" + (f"?page={page}" if page > 1 else "")
                     logger.debug(f"Bayt search: {url}")
                     _sleep()
+
                     try:
-                        resp = _get_with_retry(client, url)
-                    except ScraperBlocked as e:
+                        search_page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                        # Wait for job cards to appear
+                        search_page.wait_for_selector(
+                            "li[data-job-id], div.has-pointer-d, [class*='job-card']",
+                            timeout=12000,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Bayt page load failed: {e}")
                         self.health_status = "blocked"
                         self.health_message = str(e)
-                        logger.warning(f"Bayt blocked: {e}")
-                        return results
-                    if not resp:
                         break
 
-                    soup = BeautifulSoup(resp.text, "lxml")
+                    _sleep()
 
-                    # Primary selector: li[data-job-id] job cards
-                    cards = soup.select("li[data-job-id]")
-                    # Fallback: div.has-pointer-d job cards
-                    if not cards:
-                        cards = soup.select("div.has-pointer-d")
-                    if not cards:
-                        logger.debug(f"Bayt: no cards on page {page} for '{query}'")
+                    summaries = self._extract_card_summaries(search_page, max_results - len(results))
+                    if not summaries:
+                        logger.debug(f"Bayt: no cards page {page} for '{query}'")
                         break
 
-                    for card in cards:
-                        try:
-                            title_tag = (
-                                card.find("h2")
-                                or card.find("a", {"class": lambda c: c and "jb-title" in c if c else False})
+                    for summary in summaries:
+                        snippet = " ".join(
+                            filter(
+                                None,
+                                [summary["title"], summary["company"], summary["location"]],
                             )
-                            if not title_tag:
-                                continue
-                            title = title_tag.get_text(strip=True)
+                        )
+                        listing = JobListing(
+                            title=summary["title"],
+                            company=summary["company"],
+                            location=summary["location"],
+                            source=self.SOURCE,
+                            apply_url=summary["apply_url"],
+                            description="",
+                            card_snippet=snippet,
+                            posted_date=summary["posted_date"],
+                        )
+                        results.append(listing)
+                        logger.info(f"Bayt: found '{listing.title}' @ {listing.company}")
 
-                            company_tag = card.find("b", {"itemprop": "name"}) or card.find("span", {"class": lambda c: c and "company" in c if c else False})
-                            company = company_tag.get_text(strip=True) if company_tag else "Unknown"
+                        if len(results) >= max_results:
+                            break
 
-                            loc_tag = card.find("li", {"class": lambda c: c and "location" in c if c else False}) or card.find("span", {"itemprop": "addressLocality"})
-                            location = loc_tag.get_text(strip=True) if loc_tag else "Egypt"
+            browser.close()
 
-                            link_tag = title_tag if title_tag.name == "a" else title_tag.find("a")
-                            if not link_tag or not link_tag.get("href"):
-                                continue
-                            apply_url = urljoin("https://www.bayt.com", link_tag["href"])
-
-                            date_tag = card.find("li", {"class": lambda c: c and "date" in c if c else False})
-                            posted_date = date_tag.get_text(strip=True) if date_tag else None
-
-                            description = _fetch_description(client, apply_url)
-
-                            listing = JobListing(
-                                title=title,
-                                company=company,
-                                location=location,
-                                source=self.SOURCE,
-                                apply_url=apply_url,
-                                description=description,
-                                posted_date=posted_date,
-                            )
-                            results.append(listing)
-                            logger.info(f"Bayt: found '{title}' @ {company}")
-
-                            if len(results) >= max_results:
-                                break
-                        except Exception as e:
-                            logger.warning(f"Bayt card parse error: {e}")
-                            continue
-        if results and self.health_status != "blocked":
+        if results:
             self.health_status = "ok"
         return results
+
+    def fetch_description(self, listing: JobListing, timeout_seconds: int = 25) -> str:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            return ""
+        timeout_ms = timeout_seconds * 1000
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            try:
+                return self._fetch_description(page, listing.apply_url, timeout_ms=timeout_ms)
+            finally:
+                browser.close()
+
+    def _extract_card_summaries(self, page, limit: int) -> list[dict]:
+        summaries: list[dict] = []
+        cards = page.query_selector_all("li[data-job-id]")
+        if not cards:
+            cards = page.query_selector_all("div.has-pointer-d")
+        if not cards:
+            cards = page.query_selector_all("[class*='job-card']")
+
+        for card in cards:
+            if len(summaries) >= limit:
+                break
+            try:
+                title_el = card.query_selector("h2, h3, a[class*='jb-title']")
+                if not title_el:
+                    continue
+                title = title_el.inner_text().strip()
+
+                company_el = card.query_selector(
+                    "b[itemprop='name'], span[itemprop='name'], [class*='company']"
+                )
+                company = company_el.inner_text().strip() if company_el else "Unknown"
+
+                loc_el = card.query_selector(
+                    "li[class*='location'], span[itemprop='addressLocality'], [class*='location']"
+                )
+                location = loc_el.inner_text().strip() if loc_el else "Egypt"
+
+                link_el = (
+                    card.query_selector("a[href*='/job/']")
+                    or card.query_selector("a[href*='bayt.com']")
+                    or title_el if title_el.evaluate("el => el.tagName") == "A" else None
+                )
+                if not link_el:
+                    link_el = card.query_selector("a[href]")
+                if not link_el:
+                    continue
+
+                href = link_el.get_attribute("href") or ""
+                apply_url = href if href.startswith("http") else urljoin("https://www.bayt.com", href)
+
+                date_el = card.query_selector("li[class*='date'], span[class*='date'], time")
+                posted_date = date_el.inner_text().strip() if date_el else None
+
+                summaries.append({
+                    "title": title,
+                    "company": company,
+                    "location": location,
+                    "apply_url": apply_url,
+                    "posted_date": posted_date,
+                })
+            except Exception as e:
+                logger.warning(f"Bayt card parse error: {e}")
+                continue
+
+        return summaries
+
+    def _fetch_description(self, page, url: str, timeout_ms: int | None = None) -> str:
+        from playwright.sync_api import TimeoutError as PWTimeout
+        _sleep()
+        nav_timeout = timeout_ms or self._timeout_ms
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=nav_timeout)
+            page.wait_for_selector(
+                "div[id*='jb-description'], div[class*='jb-description'], section.jb-details",
+                timeout=8000,
+            )
+            desc_el = page.query_selector(
+                "div[id*='jb-description'], div[class*='jb-description'], section.jb-details"
+            )
+            return desc_el.inner_text().strip() if desc_el else ""
+        except PWTimeout:
+            logger.warning(f"Bayt description timeout: {url}")
+            return ""
+        except Exception as e:
+            logger.warning(f"Bayt description error: {e}")
+            return ""

@@ -2,10 +2,20 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 from agent.config import Settings
 from agent.observability.run_report import ScraperStat
 from agent.orchestrator import run
+from agent.run_control import get_coordinator
 from agent.search.base import JobListing
+
+
+@pytest.fixture(autouse=True)
+def reset_coordinator():
+    get_coordinator().reset()
+    yield
+    get_coordinator().reset()
 
 
 def _seed_workspace(tmp_path):
@@ -57,10 +67,12 @@ def test_run_dry_run_with_listing(tmp_path):
         mock_collect.return_value = (
             [listing],
             {"wuzzuf": ScraperStat(count=1, status="ok", message="healthy")},
+            {},
         )
-        with patch("agent.orchestrator.deduplicate", return_value=[listing]):
-            with patch("agent.orchestrator.score_listing", return_value=score):
-                run(manual=True, dry_run=True)
+        with patch("agent.orchestrator._fetch_details_for_shortlist"):
+            with patch("agent.orchestrator.deduplicate", return_value=[listing]):
+                with patch("agent.orchestrator.score_listing", return_value=score):
+                    run(manual=True, dry_run=True)
 
     runs = list((ws / "logs" / "runs").glob("*.json"))
     assert runs
@@ -99,11 +111,13 @@ def test_run_returns_before_tracker_save_when_all_scores_skip(tmp_path):
             mock_collect.return_value = (
                 [listing],
                 {"indeed_eg": ScraperStat(count=1, status="ok")},
+                {},
             )
-            with patch("agent.orchestrator.deduplicate", return_value=[listing]):
-                with patch("agent.orchestrator.score_listing", return_value=skip_score):
-                    with patch("agent.tracker.sql.SqlTracker.save") as mock_save:
-                        run(manual=True, dry_run=False)
+            with patch("agent.orchestrator._fetch_details_for_shortlist"):
+                with patch("agent.orchestrator.deduplicate", return_value=[listing]):
+                    with patch("agent.orchestrator.score_listing", return_value=skip_score):
+                        with patch("agent.tracker.sql.SqlTracker.save") as mock_save:
+                            run(manual=True, dry_run=False)
 
         mock_save.assert_not_called()
         assert (ws / "memory" / "applications-log.md").read_text(encoding="utf-8") == "# Log\n"

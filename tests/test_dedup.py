@@ -18,7 +18,7 @@ def test_dedup_removes_exact_duplicates():
     listings = [
         make_listing("AI Engineer", "TestCorp", "wuzzuf"),
         make_listing("AI Engineer", "TestCorp", "bayt"),
-        make_listing("AI Engineer", "TestCorp", "tanqeeb"),
+        make_listing("AI Engineer", "TestCorp", "gulftalent"),
     ]
     result = deduplicate(listings, set())
     assert len(result) == 1
@@ -46,13 +46,13 @@ def test_dedup_removes_known_slugs():
 
 def test_dedup_prefers_source_priority():
     listings = [
-        make_listing("Data Scientist", "Corp", "tanqeeb"),
+        make_listing("Data Scientist", "Corp", "gulftalent"),
         make_listing("Data Scientist", "Corp", "indeed_eg"),
         make_listing("Data Scientist", "Corp", "bayt"),
     ]
     result = deduplicate(listings, set())
     assert len(result) == 1
-    assert result[0].source == "indeed_eg"  # Priority 2 over bayt(3) and tanqeeb(4)
+    assert result[0].source == "indeed_eg"  # Priority 2 over bayt(3) and gulftalent(4)
 
 
 def test_dedup_prefers_linkedin_over_boards():

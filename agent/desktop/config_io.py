@@ -1,6 +1,7 @@
 """Read and update the local .env file for the desktop app."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from agent.config import Settings
@@ -98,3 +99,31 @@ def write_env_values(updates: dict[str, str], path: Path = Path(".env")) -> None
 
 def setup_is_missing(settings: Settings) -> bool:
     return not settings.openrouter_api_key.strip() or not settings.database_url.strip()
+
+
+def run_sources_path(settings: Settings) -> Path:
+    return settings.config_path / "run_sources.json"
+
+
+def read_run_sources(settings: Settings) -> set[str] | None:
+    path = run_sources_path(settings)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        sources = data.get("sources")
+        if isinstance(sources, list):
+            return {str(s).lower() for s in sources if s}
+    except (json.JSONDecodeError, OSError):
+        return None
+    return None
+
+
+def write_run_sources(settings: Settings, sources: set[str]) -> Path:
+    path = run_sources_path(settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"sources": sorted(sources)}, indent=2),
+        encoding="utf-8",
+    )
+    return path

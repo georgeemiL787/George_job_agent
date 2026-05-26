@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class ScoreResultModel(BaseModel):
+    reasoning: str = Field(default="", description="Chain of thought reasoning before scoring")
     score: int = Field(ge=0, le=100)
     tier: Literal["top", "strong", "medium", "stretch", "skip"]
     fit_summary: str = ""
@@ -16,16 +17,29 @@ class ScoreResultModel(BaseModel):
         "ai_engineer",
         "ml_engineer",
         "cv_engineer",
+        "nlp_engineer",
+        "rag_engineer",
         "data_scientist",
         "ai_intern",
+        "ml_intern",
+        "cv_intern",
+        "nlp_intern",
+        "rag_intern",
+        "data_intern",
         "adjacent",
         "irrelevant",
     ] = "adjacent"
+    ats_keywords: list[str] = Field(default_factory=list)
 
     @field_validator("key_matches", "gaps")
     @classmethod
     def trim_lists(cls, v: list[str]) -> list[str]:
         return [str(x).strip() for x in v if str(x).strip()][:5]
+
+    @field_validator("ats_keywords")
+    @classmethod
+    def trim_ats(cls, v: list[str]) -> list[str]:
+        return [str(x).strip() for x in v if str(x).strip()][:25]
 
 
 def validate_score_result(data: dict) -> tuple[dict | None, list[str]]:

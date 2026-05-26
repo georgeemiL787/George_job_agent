@@ -12,8 +12,9 @@ SOURCE_PRIORITY = {
     "wuzzuf": 1,
     "indeed_eg": 2,
     "bayt": 3,
-    "tanqeeb": 4,
-    "linkedin": 0,  # user-curated; prefer over board scrapes
+    "gulftalent": 4,
+    "linkedin": 0,
+    "linkedin_jobs": 0,
     "manual": 0,
 }
 
@@ -31,7 +32,7 @@ def deduplicate(
     """
     Remove duplicates across sources and against already-tracked/applied roles.
 
-    Priority: linkedin/manual > wuzzuf > indeed_eg > bayt > tanqeeb
+    Priority: linkedin/manual > wuzzuf > indeed_eg > bayt > gulftalent
     Dedup key: normalize(title) + normalize(company)
     """
     seen_keys: dict[str, JobListing] = {}

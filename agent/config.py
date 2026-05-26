@@ -10,10 +10,13 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
-    # Model selection
-    scoring_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
-    cv_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
-    letter_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    # Model selection — reliable free OpenRouter models (May 2026)
+    # Primary: llama-3.3-70b is fast, reliable JSON output
+    # CV/Letter: deepseek handles long structured generation well
+    # Fallback: gpt-oss-120b as last resort
+    scoring_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    cv_model: str = "deepseek/deepseek-r1-distill-llama-70b:free"
+    letter_model: str = "deepseek/deepseek-r1-distill-llama-70b:free"
     fallback_model: str = "openai/gpt-oss-120b:free"
 
     # Workspace
@@ -27,6 +30,24 @@ class Settings(BaseSettings):
     schedule_interval_hours: int = 4
     max_roles_per_run: int = 20
     min_score_to_tailor: int = 60
+    persist_dry_run_scores: bool = True
+
+    # Scoring models and rate limits
+    scoring_model_fast: str = ""
+    scorer_max_retries: int = 5
+    scorer_backoff_base_seconds: float = 2.0
+    scorer_delay_seconds: float = 0.0
+    run_report_retention_days: int = 30
+
+    # Source controls
+    enabled_sources: str = "wuzzuf,linkedin,bayt"
+    skip_slow_sources: bool = True
+    enable_indeed: bool = False
+    scraper_timeout_seconds: int = 25
+    max_scoring_candidates: int = 30
+    prefilter_min_score: int = 40
+    fast_run_max_scoring_candidates: int = 20
+    deep_run_max_scoring_candidates: int = 40
 
     # Notifications (optional)
     notify_enabled: bool = False
@@ -86,6 +107,9 @@ class Settings(BaseSettings):
         if p.is_absolute():
             return p
         return self.repo_root / self.cv_variations_dir
+
+    def enabled_source_set(self) -> set[str]:
+        return {s.strip().lower() for s in self.enabled_sources.split(",") if s.strip()}
 
     @property
     def repo_root(self) -> Path:

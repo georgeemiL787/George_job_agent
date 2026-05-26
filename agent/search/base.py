@@ -14,9 +14,10 @@ class JobListing:
     title: str
     company: str
     location: str
-    source: str          # "wuzzuf" | "indeed_eg" | "bayt" | "tanqeeb" | "linkedin" | "manual"
+    source: str          # "wuzzuf" | "indeed_eg" | "bayt" | "gulftalent" | "linkedin_jobs" | "manual"
     apply_url: str
     description: str = ""
+    card_snippet: str = ""
     posted_date: Optional[str] = None
     raw_html: str = ""
     slug: str = ""       # auto-generated: company-title-source, lowercased, hyphened
@@ -43,3 +44,7 @@ class BaseScraper(ABC):
     @abstractmethod
     def search(self, queries: list[str], max_results: int = 20) -> list[JobListing]:
         ...
+
+    def fetch_description(self, listing: JobListing, timeout_seconds: int = 25) -> str:
+        """Fetch full JD for a shortlisted listing. Override in subclasses."""
+        return listing.description or ""

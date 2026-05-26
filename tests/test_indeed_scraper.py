@@ -63,9 +63,13 @@ class FakeContext:
 class FakeBrowser:
     def __init__(self) -> None:
         self.context = FakeContext()
+        self.detail_page = self.context.detail_page
 
     def new_context(self, user_agent: str):
         return self.context
+
+    def new_page(self):
+        return self.detail_page
 
     def close(self) -> None:
         return None
@@ -106,8 +110,13 @@ def test_indeed_fetches_descriptions_on_separate_detail_page(monkeypatch):
     context = manager.playwright.chromium.browser.context
     assert len(listings) == 1
     assert listings[0].title == "AI Engineer"
-    assert listings[0].description == "Python and ML role description"
+    assert listings[0].description == ""
     assert context.search_page.gotos == [
         "https://eg.indeed.com/jobs?q=AI+engineer+Cairo&l=Cairo%2C+Egypt&start=0"
     ]
+    assert context.detail_page.gotos == []
+
+    with patch("playwright.sync_api.sync_playwright", return_value=manager):
+        desc = scraper.fetch_description(listings[0], timeout_seconds=10)
+    assert desc == "Python and ML role description"
     assert context.detail_page.gotos == ["https://eg.indeed.com/rc/clk?jk=123"]

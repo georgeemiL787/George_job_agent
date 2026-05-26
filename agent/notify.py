@@ -20,6 +20,7 @@ def _meets_tier(tier: str, min_tier: str) -> bool:
 def notify_top_roles(
     scored: list[tuple[JobListing, dict]],
     settings: Settings,
+    report: object | None = None,
 ) -> None:
     if not settings.notify_enabled:
         return
@@ -34,6 +35,14 @@ def notify_top_roles(
         return
 
     lines = ["George Job Agent — top roles this run:", ""]
+    if report is not None:
+        lines.append(
+            f"Collected: {getattr(report, 'raw_listings', 0)} | "
+            f"Fresh: {getattr(report, 'fresh_listings', 0)} | "
+            f"Scored: {getattr(report, 'scored', 0)} | "
+            f"Failed: {len(getattr(report, 'failures', []))}"
+        )
+        lines.append("")
     for listing, result in eligible[:3]:
         lines.append(
             f"- {listing.company} / {listing.title} "

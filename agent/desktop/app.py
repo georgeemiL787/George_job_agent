@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -39,18 +39,48 @@ import agent.config as config_mod
 from agent.config import Settings, get_settings
 from agent.desktop.config_io import (
     desktop_defaults,
+    read_run_sources,
     setup_is_missing,
     sqlite_url_for_workspace,
     write_env_values,
+    write_run_sources,
 )
+from agent.desktop.run_estimator import RunEstimator
+from agent.desktop.scroll_page import make_scroll_page
 from agent.desktop.schedule import read_schedule, write_schedule
+from agent.desktop.theme import load_theme
 from agent.desktop.services import (
     DesktopService,
     artifact_paths,
     check_pdflatex,
     check_playwright,
+    install_miktex,
     install_playwright_chromium,
 )
+from agent.desktop.widgets import RunDashboard, RunLiveStrip
+from agent.run_control import RunProgress
+from agent.version import __version__
+
+
+def app_icon_path() -> Path:
+    bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    return bundle_root / "agent" / "desktop" / "assets" / "app.png"
+
+
+def app_icon() -> QIcon:
+    icon_path = app_icon_path()
+    return QIcon(str(icon_path)) if icon_path.exists() else QIcon()
+
+
+def set_windows_app_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GeorgeJobAgent.Desktop")
+    except Exception:
+        pass
 
 
 class FunctionWorker(QThread):
@@ -64,8 +94,11 @@ class FunctionWorker(QThread):
     def run(self) -> None:
         try:
             self.succeeded.emit(self.func())
-        except Exception:
-            self.failed.emit(traceback.format_exc())
+        except Exception as exc:
+            if isinstance(exc, ValueError):
+                self.failed.emit(str(exc))
+            else:
+                self.failed.emit(traceback.format_exc())
 
 
 class SetupDialog(QDialog):
@@ -114,6 +147,8 @@ class SetupDialog(QDialog):
         check.clicked.connect(self.check_setup)
         install = QPushButton("Install Chromium")
         install.clicked.connect(self.install_chromium)
+        install_latex = QPushButton("Install MiKTeX")
+        install_latex.clicked.connect(self.install_miktex)
         save = QPushButton("Save and continue")
         save.clicked.connect(self.save)
         cancel = QPushButton("Cancel")
@@ -123,6 +158,7 @@ class SetupDialog(QDialog):
         buttons.addWidget(browse)
         buttons.addWidget(check)
         buttons.addWidget(install)
+        buttons.addWidget(install_latex)
         buttons.addStretch()
         buttons.addWidget(cancel)
         buttons.addWidget(save)
@@ -163,6 +199,17 @@ class SetupDialog(QDialog):
         except Exception as exc:
             self.status.setPlainText(str(exc))
 
+    def install_miktex(self) -> None:
+        self.status.setPlainText(
+            "Installing MiKTeX via winget. This can take several minutes...\n"
+            "Please wait — do not close this dialog."
+        )
+        QApplication.processEvents()
+        try:
+            self.status.setPlainText(install_miktex())
+        except Exception as exc:
+            self.status.setPlainText(str(exc))
+
     def save(self) -> None:
         workspace = self.workspace.text().strip() or "workspace"
         values = {
@@ -195,13 +242,17 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = settings
         self.service = DesktopService(settings)
+        self.run_estimator = RunEstimator(settings)
         self.worker: FunctionWorker | None = None
         self.selected_slug = ""
         self.schedule_timer = QTimer(self)
         self.schedule_timer.timeout.connect(self.run_scheduled_cycle)
+        self.progress_timer = QTimer(self)
+        self.progress_timer.timeout.connect(self.refresh_run_progress)
 
-        self.setWindowTitle("George Job Agent")
-        self.resize(1280, 820)
+        self.setWindowTitle(f"George Job Agent v{__version__}")
+        self.setWindowIcon(app_icon())
+        self.resize(1440, 920)
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
@@ -226,14 +277,57 @@ class MainWindow(QMainWindow):
         run_box = QGroupBox("Run")
         run_layout = QGridLayout(run_box)
         self.run_status = QLabel("Idle")
-        self.run_full_btn = QPushButton("Run full cycle")
-        self.run_dry_btn = QPushButton("Run dry-run")
-        self.run_full_btn.clicked.connect(lambda: self.start_worker("Running full cycle", lambda: self.service.run_cycle(dry_run=False)))
-        self.run_dry_btn.clicked.connect(lambda: self.start_worker("Running dry-run", lambda: self.service.run_cycle(dry_run=True)))
-        run_layout.addWidget(self.run_full_btn, 0, 0)
-        run_layout.addWidget(self.run_dry_btn, 0, 1)
-        run_layout.addWidget(QLabel("Status"), 1, 0)
-        run_layout.addWidget(self.run_status, 1, 1)
+        self.run_fast_btn = QPushButton("Fast run")
+        self.run_fast_btn.setObjectName("PrimaryButton")
+        self.run_deep_btn = QPushButton("Deep run")
+        self.run_dry_btn = QPushButton("Dry-run")
+        self.run_stop_btn = QPushButton("Stop Run")
+        self.run_stop_btn.setObjectName("DangerButton")
+        self.run_stop_btn.setEnabled(False)
+        self.run_stop_btn.clicked.connect(self.stop_run)
+        self.run_fast_btn.clicked.connect(
+            lambda: self.start_run_worker("Fast run active", mode="fast", dry_run=False)
+        )
+        self.run_deep_btn.clicked.connect(
+            lambda: self.start_run_worker("Deep run active", mode="deep", dry_run=False)
+        )
+        self.run_dry_btn.clicked.connect(
+            lambda: self.start_run_worker("Dry-run active", mode="fast", dry_run=True)
+        )
+        run_layout.addWidget(self.run_fast_btn, 0, 0)
+        run_layout.addWidget(self.run_deep_btn, 0, 1)
+        run_layout.addWidget(self.run_dry_btn, 0, 2)
+        run_layout.addWidget(self.run_stop_btn, 1, 0, 1, 3)
+        run_layout.addWidget(QLabel("Status"), 2, 0)
+        run_layout.addWidget(self.run_status, 2, 1, 1, 2)
+
+        sources_box = QGroupBox("Sources")
+        sources_layout = QHBoxLayout(sources_box)
+        self.src_wuzzuf = QCheckBox("Wuzzuf")
+        self.src_linkedin = QCheckBox("LinkedIn")
+        self.src_bayt = QCheckBox("Bayt")
+        self.src_gulftalent = QCheckBox("GulfTalent")
+        self.src_indeed = QCheckBox("Indeed")
+        for cb in (
+            self.src_wuzzuf,
+            self.src_linkedin,
+            self.src_bayt,
+            self.src_gulftalent,
+            self.src_indeed,
+        ):
+            cb.setChecked(True)
+        self.src_indeed.setChecked(False)
+        for cb in (
+            self.src_wuzzuf,
+            self.src_linkedin,
+            self.src_bayt,
+            self.src_gulftalent,
+            self.src_indeed,
+        ):
+            sources_layout.addWidget(cb)
+        save_sources = QPushButton("Save sources as default")
+        save_sources.clicked.connect(self.save_source_defaults)
+        sources_layout.addWidget(save_sources)
 
         schedule_box = QGroupBox("Scheduler")
         schedule_layout = QGridLayout(schedule_box)
@@ -249,19 +343,24 @@ class MainWindow(QMainWindow):
 
         top = QHBoxLayout()
         top.addWidget(run_box)
+        top.addWidget(sources_box)
         top.addWidget(schedule_box)
         layout.addLayout(top)
 
+        self.run_live_strip = RunLiveStrip()
+        layout.addWidget(self.run_live_strip)
+
         self.scraper_health = QTextEdit()
         self.scraper_health.setReadOnly(True)
-        self.scraper_health.setMaximumHeight(130)
+        self.scraper_health.setMinimumHeight(120)
         layout.addWidget(QLabel("Latest scraper health"))
         layout.addWidget(self.scraper_health)
 
         self.top_roles = self._new_roles_table()
+        self.top_roles.setMinimumHeight(280)
         layout.addWidget(QLabel("Top roles"))
         layout.addWidget(self.top_roles)
-        self.tabs.addTab(page, "Dashboard")
+        self._add_scroll_tab(page, "Dashboard")
 
     def _build_roles(self) -> None:
         page = QWidget()
@@ -275,16 +374,20 @@ class MainWindow(QMainWindow):
         export.clicked.connect(self.export_tracker)
         import_btn = QPushButton("Import Excel")
         import_btn.clicked.connect(self.import_tracker)
+        retry_failed = QPushButton("Retry failed scores")
+        retry_failed.clicked.connect(self.retry_failed_scores)
         controls.addWidget(self.drafts_only)
         controls.addWidget(self.include_applied)
         controls.addWidget(refresh)
         controls.addWidget(export)
         controls.addWidget(import_btn)
+        controls.addWidget(retry_failed)
         controls.addStretch()
         layout.addLayout(controls)
         self.roles_table = self._new_roles_table()
+        self.roles_table.setMinimumHeight(420)
         layout.addWidget(self.roles_table)
-        self.tabs.addTab(page, "Roles")
+        self._add_scroll_tab(page, "Roles")
 
     def _build_detail(self) -> None:
         page = QWidget()
@@ -294,6 +397,7 @@ class MainWindow(QMainWindow):
         self.detail_meta = QLabel("")
         self.detail_fit = QTextEdit()
         self.detail_fit.setReadOnly(True)
+        self.detail_fit.setMinimumHeight(320)
         self.apply_url = QLabel("")
         self.apply_url.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.detail_title)
@@ -326,7 +430,7 @@ class MainWindow(QMainWindow):
         applied.addWidget(applied_btn)
         applied.addStretch()
         layout.addLayout(applied)
-        self.tabs.addTab(page, "Role Detail")
+        self._add_scroll_tab(page, "Role Detail")
 
     def _build_add_role(self) -> None:
         page = QWidget()
@@ -338,7 +442,7 @@ class MainWindow(QMainWindow):
         self.add_source = QComboBox()
         self.add_source.addItems(["manual", "linkedin"])
         self.add_description = QTextEdit()
-        self.add_description.setMinimumHeight(240)
+        self.add_description.setMinimumHeight(360)
         submit = QPushButton("Process role")
         submit.clicked.connect(self.submit_role)
         layout.addRow("Title", self.add_title)
@@ -348,13 +452,13 @@ class MainWindow(QMainWindow):
         layout.addRow("Source", self.add_source)
         layout.addRow("Description", self.add_description)
         layout.addRow(submit)
-        self.tabs.addTab(page, "Add Role")
+        self._add_scroll_tab(page, "Add Role")
 
     def _build_run_monitor(self) -> None:
         page = QWidget()
         layout = QVBoxLayout(page)
         controls = QHBoxLayout()
-        refresh = QPushButton("Refresh report")
+        refresh = QPushButton("Refresh")
         refresh.clicked.connect(self.refresh_run_monitor)
         open_runs = QPushButton("Open run reports")
         open_runs.clicked.connect(lambda: self.open_path(self.settings.logs_path / "runs"))
@@ -362,10 +466,10 @@ class MainWindow(QMainWindow):
         controls.addWidget(open_runs)
         controls.addStretch()
         layout.addLayout(controls)
-        self.run_report = QTextEdit()
-        self.run_report.setReadOnly(True)
-        layout.addWidget(self.run_report)
-        self.tabs.addTab(page, "Run Monitor")
+        self.run_dashboard = RunDashboard()
+        self.run_dashboard.setMinimumHeight(900)
+        layout.addWidget(self.run_dashboard)
+        self._add_scroll_tab(page, "Run")
 
     def _build_artifacts(self) -> None:
         page = QWidget()
@@ -387,8 +491,9 @@ class MainWindow(QMainWindow):
         layout.addLayout(controls)
         self.artifacts_text = QTextEdit()
         self.artifacts_text.setReadOnly(True)
+        self.artifacts_text.setMinimumHeight(400)
         layout.addWidget(self.artifacts_text)
-        self.tabs.addTab(page, "Artifacts")
+        self._add_scroll_tab(page, "Artifacts")
 
     def _build_logs(self) -> None:
         page = QWidget()
@@ -404,14 +509,16 @@ class MainWindow(QMainWindow):
         layout.addLayout(controls)
         self.logs = QTextEdit()
         self.logs.setReadOnly(True)
+        self.logs.setMinimumHeight(500)
         layout.addWidget(self.logs)
-        self.tabs.addTab(page, "Logs")
+        self._add_scroll_tab(page, "Logs")
 
     def _build_settings(self) -> None:
         page = QWidget()
         layout = QVBoxLayout(page)
         self.settings_text = QTextEdit()
         self.settings_text.setReadOnly(True)
+        self.settings_text.setMinimumHeight(400)
         open_setup = QPushButton("Open setup wizard")
         open_setup.clicked.connect(self.show_setup_dialog)
         sync_master = QPushButton("Sync master CV")
@@ -425,12 +532,18 @@ class MainWindow(QMainWindow):
         buttons.addWidget(open_workspace)
         buttons.addStretch()
         layout.addLayout(buttons)
-        self.tabs.addTab(page, "Settings")
+        self._add_scroll_tab(page, "Settings")
+
+    def _add_scroll_tab(self, page: QWidget, title: str) -> None:
+        self.tabs.addTab(make_scroll_page(page), title)
 
     def _new_roles_table(self) -> QTableWidget:
-        table = QTableWidget(0, 7)
-        table.setHorizontalHeaderLabels(["Rank", "Score", "Tier", "Status", "Company", "Role", "Source"])
+        table = QTableWidget(0, 9)
+        table.setHorizontalHeaderLabels(
+            ["Rank", "Score", "Tier", "Status", "ScoreSt", "ArtSt", "Company", "Role", "Source"]
+        )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.verticalHeader().setDefaultSectionSize(32)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.itemDoubleClicked.connect(self.table_role_opened)
@@ -439,6 +552,7 @@ class MainWindow(QMainWindow):
     def initialize_app(self) -> None:
         try:
             self.service.initialize()
+            self.apply_saved_sources()
             self.load_schedule()
             self.refresh_all()
             self.run_status.setText("Idle")
@@ -456,7 +570,7 @@ class MainWindow(QMainWindow):
     def refresh_dashboard(self) -> None:
         rows = self.service.list_roles(include_applied=False)
         self.populate_table(self.top_roles, rows[:5])
-        report = self.service.latest_run_report()
+        report = self.service.active_run_report() or self.service.latest_run_report()
         if not report:
             self.scraper_health.setPlainText("No run report yet.")
             return
@@ -478,11 +592,45 @@ class MainWindow(QMainWindow):
         self.logs.setPlainText("\n".join(self.service.tail_log()))
 
     def refresh_run_monitor(self) -> None:
-        report = self.service.latest_run_report()
-        if not report:
-            self.run_report.setPlainText("No run report yet.")
-            return
-        self.run_report.setPlainText(json.dumps(report, indent=2, sort_keys=True, default=str))
+        self._apply_run_ui_state()
+
+    def _apply_run_ui_state(self) -> None:
+        active = self.service.is_run_active()
+        progress = self.service.get_run_progress()
+        events = self.service.get_run_events()
+        report = self.service.active_run_report() or self.service.latest_run_report()
+        opts = self.service.get_run_options()
+        mode = opts.get("mode", "fast") if opts else "fast"
+
+        estimate = None
+        if active or progress.get("phase"):
+            fields = RunProgress.__dataclass_fields__
+            estimate = self.run_estimator.estimate(
+                RunProgress(**{k: progress[k] for k in fields if k in progress}),
+                mode=mode,
+            )
+
+        status_text = self.run_status.text()
+        if active:
+            status_text = f"Running — {progress.get('phase', '')}"
+        elif not progress.get("phase"):
+            self.run_live_strip.set_idle()
+
+        if active or progress.get("phase"):
+            self.run_live_strip.update_state(
+                active=active,
+                progress=progress,
+                estimate=estimate,
+                status_text=status_text,
+            )
+        self.run_dashboard.update_state(
+            active=active,
+            progress=progress,
+            estimate=estimate,
+            events=events,
+            report=report,
+            status_text=status_text,
+        )
 
     def refresh_artifacts(self) -> None:
         lines = [
@@ -508,6 +656,9 @@ class MainWindow(QMainWindow):
                     f"Database: {self.settings.database_url}",
                     f"OpenRouter key: {'set' if self.settings.openrouter_api_key else 'missing'}",
                     f"Schedule interval: {self.settings.schedule_interval_hours}h",
+                    "",
+                    self.service.resolved_config_summary(),
+                    "",
                     playwright_msg,
                     latex_msg,
                     f"Playwright ready: {playwright_ok}",
@@ -524,6 +675,8 @@ class MainWindow(QMainWindow):
                 role.get("score") or 0,
                 role.get("tier") or "",
                 role.get("status") or "",
+                role.get("scoring_status") or "",
+                role.get("artifact_status") or "",
                 role.get("company") or "",
                 role.get("title") or "",
                 role.get("source") or "",
@@ -546,36 +699,130 @@ class MainWindow(QMainWindow):
             return
         self.selected_slug = slug
         self.detail_title.setText(f"{role['company']} - {role['title']}")
+        fr = role.get("failure_reason") or ""
         self.detail_meta.setText(
-            f"Score {role['score']}/100 | {role['tier']} | {role['status']} | {role['source']}"
+            f"Score {role['score']}/100 | {role['tier']} | {role['status']} | "
+            f"{role.get('scoring_status', '')} | {role.get('artifact_status', '')} | {role['source']}"
+            + (f" | Error: {fr[:60]}" if fr else "")
         )
         self.apply_url.setText(role.get("apply_url") or "")
-        self.detail_fit.setPlainText(role.get("fit_summary") or "")
+        fit = role.get("fit_summary") or ""
+        if fr:
+            fit += f"\n\nFailure: {fr}"
+        self.detail_fit.setPlainText(fit)
         self.refresh_artifacts()
 
-    def start_worker(self, status: str, func: Callable[[], Any], on_success: Callable[[Any], None] | None = None) -> None:
+    def _selected_sources(self) -> set[str] | None:
+        mapping = {
+            "wuzzuf": self.src_wuzzuf,
+            "linkedin": self.src_linkedin,
+            "bayt": self.src_bayt,
+            "gulftalent": self.src_gulftalent,
+            "indeed_eg": self.src_indeed,
+        }
+        selected = {key for key, cb in mapping.items() if cb.isChecked()}
+        return selected or None
+
+    def start_run_worker(self, status: str, *, mode: str, dry_run: bool) -> None:
+        sources = self._selected_sources()
+        self.start_worker(
+            status,
+            lambda: self.service.run_cycle(dry_run=dry_run, mode=mode, sources=sources),
+            is_run=True,
+        )
+
+    def stop_run(self) -> None:
+        self.service.cancel_run()
+        self.run_status.setText("Stopping…")
+
+    def refresh_run_progress(self) -> None:
+        if not self.service.is_run_active():
+            self.progress_timer.stop()
+            self.run_stop_btn.setEnabled(False)
+            self._apply_run_ui_state()
+            return
+        p = self.service.get_run_progress()
+        self.run_status.setText(f"Running — {p.get('phase', '')}")
+        self._apply_run_ui_state()
+
+    def apply_saved_sources(self) -> None:
+        saved = read_run_sources(self.settings)
+        if not saved:
+            return
+        mapping = {
+            "wuzzuf": self.src_wuzzuf,
+            "linkedin": self.src_linkedin,
+            "bayt": self.src_bayt,
+            "gulftalent": self.src_gulftalent,
+            "indeed_eg": self.src_indeed,
+        }
+        for key, cb in mapping.items():
+            cb.setChecked(key in saved or ("linkedin_jobs" in saved and key == "linkedin"))
+
+    def retry_failed_scores(self) -> None:
+        self.start_worker(
+            "Retrying failed scores",
+            lambda: self.service.retry_failed_scores(),
+            on_success=lambda n: self.show_info(f"Retried {n} role(s)."),
+        )
+
+    def save_source_defaults(self) -> None:
+        path = write_run_sources(self.settings, self._selected_sources() or set())
+        self.show_info(f"Saved source defaults to {path}")
+
+    def show_info(self, message: str) -> None:
+        QMessageBox.information(self, "George Job Agent", message)
+
+    def start_worker(
+        self,
+        status: str,
+        func: Callable[[], Any],
+        on_success: Callable[[Any], None] | None = None,
+        *,
+        is_run: bool = False,
+    ) -> None:
         if self.worker and self.worker.isRunning():
             self.show_error("Another job is already running.")
             return
         self.run_status.setText(status)
+        if is_run:
+            self.run_stop_btn.setEnabled(True)
+            self.progress_timer.start(250)
         self.worker = FunctionWorker(func)
-        self.worker.succeeded.connect(lambda result: self.worker_succeeded(result, on_success))
-        self.worker.failed.connect(self.worker_failed)
+        self.worker.succeeded.connect(lambda result: self.worker_succeeded(result, on_success, is_run=is_run))
+        self.worker.failed.connect(lambda msg: self.worker_failed(msg, is_run=is_run))
         self.worker.start()
 
-    def worker_succeeded(self, result: Any, on_success: Callable[[Any], None] | None) -> None:
-        self.run_status.setText("Succeeded")
+    def worker_succeeded(
+        self,
+        result: Any,
+        on_success: Callable[[Any], None] | None,
+        *,
+        is_run: bool = False,
+    ) -> None:
+        if is_run:
+            self.progress_timer.stop()
+            self.run_stop_btn.setEnabled(False)
+            self.refresh_run_progress()
+            report = self.service.latest_run_report()
+            terminal = (report or {}).get("status", "complete")
+            self.run_status.setText(terminal.capitalize())
+        else:
+            self.run_status.setText("Succeeded")
         if on_success:
             on_success(result)
         self.refresh_all()
 
-    def worker_failed(self, message: str) -> None:
+    def worker_failed(self, message: str, *, is_run: bool = False) -> None:
+        if is_run:
+            self.progress_timer.stop()
+            self.run_stop_btn.setEnabled(False)
         self.run_status.setText("Failed")
         self.show_error(message)
         self.refresh_logs()
 
     def run_scheduled_cycle(self) -> None:
-        self.start_worker("Scheduled run active", lambda: self.service.run_cycle(dry_run=False))
+        self.start_run_worker("Scheduled run active", mode="fast", dry_run=False)
 
     def load_schedule(self) -> None:
         config = read_schedule(self.settings)
@@ -619,7 +866,23 @@ class MainWindow(QMainWindow):
         )
 
     def tailor_selected(self) -> None:
-        self.require_selected(lambda slug: self.start_worker("Tailoring CV", lambda: self.service.tailor_role(slug)))
+        def on_success(result: dict[str, str | None]) -> None:
+            if result.get("pdf_path"):
+                self.show_info(f"CV ready.\nPDF: {result['pdf_path']}")
+            elif result.get("tex_path"):
+                self.show_info(
+                    f"CV TeX saved (install MiKTeX to compile PDF).\n{result['tex_path']}"
+                )
+            else:
+                self.show_info("CV tailored successfully.")
+
+        self.require_selected(
+            lambda slug: self.start_worker(
+                "Tailoring CV",
+                lambda: self.service.tailor_role(slug),
+                on_success=on_success,
+            )
+        )
 
     def approve_selected(self) -> None:
         self.require_selected(lambda slug: self.start_worker("Approving role", lambda: self.service.approve_role(slug)))
@@ -686,7 +949,12 @@ def dt_today_qdate():
 
 
 def run_desktop(argv: list[str] | None = None) -> int:
+    set_windows_app_id()
     app = QApplication.instance() or QApplication(argv or sys.argv)
+    theme = load_theme("dark")
+    if theme:
+        app.setStyleSheet(theme)
+    app.setWindowIcon(app_icon())
     window = MainWindow(get_settings())
     window.show()
     return app.exec()

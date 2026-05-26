@@ -17,5 +17,4 @@ jobs:
       - run: ruff check .
       - run: pip check
       - run: pip-audit -r requirements.txt
-      - run: python -m pytest tests/ -q --ignore=tests/test_orchestrator.py
-      - run: python -m pytest tests/test_orchestrator.py -q
+      - run: python -m pytest tests/ -q

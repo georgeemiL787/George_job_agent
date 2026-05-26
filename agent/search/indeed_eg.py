@@ -45,7 +45,6 @@ class IndeedEgScraper(BaseScraper):
                 )
             )
             search_page = context.new_page()
-            detail_page = context.new_page()
 
             for query in queries:
                 if len(results) >= max_results:
@@ -88,14 +87,20 @@ class IndeedEgScraper(BaseScraper):
                         break
 
                     for summary in card_summaries:
-                        description = self._fetch_description(detail_page, summary["apply_url"])
+                        snippet = " ".join(
+                            filter(
+                                None,
+                                [summary["title"], summary["company"], summary["location"]],
+                            )
+                        )
                         listing = JobListing(
                             title=summary["title"],
                             company=summary["company"],
                             location=summary["location"],
                             source=self.SOURCE,
                             apply_url=summary["apply_url"],
-                            description=description,
+                            description="",
+                            card_snippet=snippet or "",
                             posted_date=summary["posted_date"],
                         )
                         results.append(listing)
@@ -108,6 +113,20 @@ class IndeedEgScraper(BaseScraper):
         if results:
             self.health_status = "ok"
         return results
+
+    def fetch_description(self, listing: JobListing, timeout_seconds: int = 25) -> str:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            return ""
+        timeout_ms = timeout_seconds * 1000
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            try:
+                return self._fetch_description(page, listing.apply_url, timeout_ms=timeout_ms)
+            finally:
+                browser.close()
 
     def _extract_card_summaries(self, page, limit: int) -> list[dict[str, str | None]]:
         summaries: list[dict[str, str | None]] = []
@@ -159,11 +178,11 @@ class IndeedEgScraper(BaseScraper):
                 continue
         return summaries
 
-    def _fetch_description(self, page, url: str) -> str:
+    def _fetch_description(self, page, url: str, timeout_ms: int = 20000) -> str:
         from playwright.sync_api import TimeoutError as PWTimeout
         _sleep()
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
             page.wait_for_selector(
                 "#jobDescriptionText, div[data-testid='jobsearch-JobComponent-description']",
                 timeout=8000,

@@ -9,6 +9,7 @@ from agent.cv.master_cv import load_master_cv_facts
 from agent.memory.store import MemoryStore
 from agent.scoring.scorer import score_listing
 from agent.search.base import JobListing
+from agent.tailor_gates import should_tailor_cv, should_tailor_letter
 from agent.tracker import get_tracker
 
 
@@ -30,13 +31,13 @@ def process_manual_role(listing: JobListing, settings: Settings) -> dict:
         company=listing.company,
     )
 
-    if result["score"] >= settings.min_score_to_tailor:
+    if should_tailor_cv(result["score"], settings):
         cv_art = build_cv_artifact(listing, result, master_facts, settings)
         if cv_art.ok:
             tracker.mark_cv_ready(listing.slug)
             tracker.mark_draft(listing.slug)
 
-    if result["tier"] in ("top", "strong"):
+    if should_tailor_letter(result["tier"]):
         letter_art = build_letter_artifact(listing, result, master_facts, settings)
         if letter_art.ok:
             tracker.mark_letter_ready(listing.slug)
