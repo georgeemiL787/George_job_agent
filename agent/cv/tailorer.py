@@ -1,7 +1,6 @@
 """LLM-based CV tailorer — generates per-role ATS-optimized LaTeX CV."""
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from loguru import logger
@@ -11,8 +10,7 @@ from agent.config import Settings, get_settings
 from agent.cv.variations import style_hint_for_role_family
 from agent.llm_retry import call_with_model_and_key_pool, strip_think_block
 from agent.search.base import JobListing
-
-from agent.validation.latex import validate_latex_cv
+from agent.validation.latex import sanitize_latex_source, validate_latex_cv
 
 SYSTEM_PROMPT = """\
 You are an expert CV writer specializing in ATS-optimized resumes for AI/ML engineering roles.
@@ -29,6 +27,7 @@ RULES (never violate):
 8. Output ONLY the complete compilable LaTeX source. Do not output conversational text or markdown fences before or after the latex document.
 9. Use hands-on, built, developed, applied, contributed language. Never imply senior ownership or multi-year full-time experience.
 10. Follow the exact LaTeX structure of the BASE LATEX TEMPLATE. Never change the preamble.
+11. Use ASCII punctuation only and escape percentage signs as \\%.
 """
 
 
@@ -42,9 +41,9 @@ def _build_tailor_prompt(
     key_matches = ", ".join(score_result.get("key_matches", []))
     ats_keywords = score_result.get("ats_keywords", [])
     ats_block = (
-        "\n".join(f"  • {kw}" for kw in ats_keywords)
+        "\n".join(f"  - {kw}" for kw in ats_keywords)
         if ats_keywords
-        else "  (none extracted — use key_matches above)"
+        else "  (none extracted - use key_matches above)"
     )
     role_family = score_result.get("role_family", "adjacent")
     style = style_hint_for_role_family(role_family)
@@ -58,7 +57,7 @@ Company: {listing.company}
 Location: {listing.location}
 Role Family: {role_family}
 
-ATS KEYWORDS — inject ALL of these verbatim into bullets, summary, or skills \
+ATS KEYWORDS - inject ALL of these verbatim into bullets, summary, or skills \
 (only where truthfully applicable):
 {ats_block}
 
@@ -125,7 +124,7 @@ def tailor_cv(
         user = prompt
         if validation_feedback:
             user += f"\n\nPrevious output failed validation:\n{validation_feedback}\nFix and output ONLY valid LaTeX."
-        
+
         # Instantiate a new client for the specific API key
         current_client = OpenAI(
             api_key=api_key,
@@ -135,7 +134,7 @@ def tailor_cv(
                 "X-Title": "George Job Agent",
             },
         )
-        
+
         # NOTE: RateLimitError / APIStatusError(429/5xx) are intentionally NOT
         # caught here — call_with_model_and_key_pool handles them with back-off.
         response = current_client.chat.completions.create(
@@ -155,6 +154,7 @@ def tailor_cv(
         if content is None:
             logger.warning(f"CV tailor: response does not look like LaTeX ({model})")
             return None
+        content = sanitize_latex_source(content)
         errors = validate_latex_cv(content)
         if errors:
             logger.warning(f"CV tailor validation ({model}): {errors}")

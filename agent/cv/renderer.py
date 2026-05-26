@@ -8,6 +8,28 @@ from pathlib import Path
 from loguru import logger
 
 
+def latex_failure_summary(tex_path: Path, output_dir: Path | None = None) -> str:
+    """Return the first useful LaTeX error from the compiler log, if present."""
+    log_dir = output_dir or tex_path.parent
+    log_path = log_dir / tex_path.with_suffix(".log").name
+    if not log_path.exists():
+        return ""
+
+    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        is_error = (
+            stripped.startswith("!")
+            or "LaTeX Error:" in stripped
+            or ("Package " in stripped and " Error:" in stripped)
+            or "Fatal error" in stripped
+        )
+        if is_error:
+            context = " ".join(part.strip() for part in lines[idx : idx + 3] if part.strip())
+            return context[:500]
+    return ""
+
+
 def compile_latex(tex_path: Path, output_dir: Path, latex_bin: str = "pdflatex") -> Path | None:
     """
     Run pdflatex twice (for cross-references), return path to compiled PDF.
@@ -29,7 +51,9 @@ def compile_latex(tex_path: Path, output_dir: Path, latex_bin: str = "pdflatex")
             result = subprocess.run(
                 [
                     latex_bin,
+                    "-file-line-error",
                     "-interaction=nonstopmode",
+                    "-halt-on-error",
                     "-output-directory", str(output_dir),
                     str(tex_path),
                 ],
@@ -38,8 +62,10 @@ def compile_latex(tex_path: Path, output_dir: Path, latex_bin: str = "pdflatex")
                 timeout=60,
             )
             if result.returncode != 0:
+                summary = latex_failure_summary(tex_path, output_dir)
                 logger.error(
                     f"pdflatex run {run_num} failed for {tex_path.name}:\n"
+                    f"SUMMARY: {summary}\n"
                     f"STDOUT: {result.stdout[-800:]}\n"
                     f"STDERR: {result.stderr[-400:]}"
                 )

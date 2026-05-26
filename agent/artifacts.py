@@ -9,7 +9,7 @@ from loguru import logger
 
 from agent.config import Settings
 from agent.cover_letter.writer import write_cover_letter
-from agent.cv.renderer import compile_latex
+from agent.cv.renderer import compile_latex, latex_failure_summary
 from agent.cv.tailorer import tailor_cv
 from agent.search.base import JobListing
 from agent.validation.pdf import validate_pdf
@@ -43,7 +43,11 @@ def build_cv_artifact(
 
     pdf_path = compile_latex(tex_path, tex_path.parent, settings.latex_bin)
     if not pdf_path:
-        return ArtifactResult(tex_path=tex_path, errors=["CV PDF compilation failed"])
+        detail = latex_failure_summary(tex_path, tex_path.parent)
+        message = "CV PDF compilation failed"
+        if detail:
+            message = f"{message}: {detail}"
+        return ArtifactResult(tex_path=tex_path, errors=[message])
 
     pdf_errors = validate_pdf(pdf_path, latex_bin=settings.latex_bin)
     if pdf_errors:
@@ -67,7 +71,11 @@ def build_letter_artifact(
 
     pdf_path = compile_latex(tex_path, tex_path.parent, settings.latex_bin)
     if not pdf_path:
-        return ArtifactResult(tex_path=tex_path, errors=["Letter PDF compilation failed"])
+        detail = latex_failure_summary(tex_path, tex_path.parent)
+        message = "Letter PDF compilation failed"
+        if detail:
+            message = f"{message}: {detail}"
+        return ArtifactResult(tex_path=tex_path, errors=[message])
 
     pdf_errors = validate_pdf(pdf_path, max_pages=2, latex_bin=settings.latex_bin)
     if pdf_errors:

@@ -9,8 +9,7 @@ from openai import OpenAI
 from agent.config import Settings, get_settings
 from agent.llm_retry import call_with_model_and_key_pool
 from agent.search.base import JobListing
-
-from agent.validation.latex import validate_latex_letter
+from agent.validation.latex import sanitize_latex_source, validate_latex_letter
 
 SYSTEM_PROMPT = """\
 You are a professional cover letter writer for AI/ML engineering job applications.
@@ -23,6 +22,7 @@ RULES (never violate):
 5. Professional but natural tone. No buzzwords, no padding.
 6. Never invent qualifications. Use ONLY facts from MASTER FACTS.
 7. Output ONLY the complete LaTeX letter source using the provided template. No markdown fences, no explanation.
+8. Use ASCII punctuation only and escape percentage signs as \\%.
 """
 
 
@@ -90,7 +90,7 @@ def write_cover_letter(
         user = prompt
         if validation_feedback:
             user += f"\n\nValidation errors: {validation_feedback}\nFix and output ONLY LaTeX."
-        
+
         current_client = OpenAI(
             api_key=api_key,
             base_url=settings.openrouter_base_url,
@@ -99,7 +99,7 @@ def write_cover_letter(
                 "X-Title": "George Job Agent",
             },
         )
-        
+
         # NOTE: RateLimitError / APIStatusError(429/5xx) are intentionally NOT
         # caught here — call_with_model_and_key_pool handles them with back-off.
         response = current_client.chat.completions.create(
@@ -119,6 +119,7 @@ def write_cover_letter(
         if content is None:
             logger.warning(f"Cover letter: response does not look like LaTeX ({model})")
             return None
+        content = sanitize_latex_source(content)
         errors = validate_latex_letter(content)
         if errors:
             logger.warning(f"Cover letter validation ({model}): {errors}")
