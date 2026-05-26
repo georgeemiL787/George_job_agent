@@ -70,13 +70,34 @@ Source toggles in the desktop UI can be saved to `workspace/config/run_sources.j
 
 Runtime outputs (gitignored): `workspace/logs/`, `workspace/cv/tailored/`, `build/`, `dist/`.
 
-## Desktop Screens
+## App Experience
 
-- **Dashboard**: Fast/Deep/Dry runs, source toggles, live progress, scraper health, scheduler
-- **Roles**: Pipeline table with scoring/artifact status; retry failed scores
-- **Role Detail**: Fit summary, failures, tailor/approve/package
-- **Run**: Live phase stepper, activity feed, scraper status, and ETA while a run is active
-- **Settings**: Workspace paths, resolved config, setup wizard
+### Dashboard
+![Dashboard](README_assets/a1.png)
+The Dashboard provides a high-level overview of your job search operations. It offers controls for different run modes (Fast run, Deep run, Dry-run), allows you to toggle specific job boards, and includes a scheduler for automated runs. You can monitor real-time scraper health, track the progress of pipeline phases, and quickly view the top-ranked roles.
+
+### Roles
+![Roles](README_assets/a2.png)
+The Roles screen offers a comprehensive table of all processed job listings. You can filter roles, retry any failed AI scorings, and import/export the entire pipeline to Excel. It displays critical metrics for each role such as its AI rank, score, processing status, company name, and source.
+
+### Role Detail
+![Role Detail](README_assets/a3.png)
+The Role Detail screen provides an in-depth look at a specific job listing. Here, you can review the AI's relevance evaluation and scoring breakdown. It offers actionable controls to tailor your CV, generate a targeted cover letter, open the original application URL, package your artifacts, and mark the role as applied.
+
+### Add Role
+![Add Role](README_assets/a4.png)
+The Add Role screen allows you to manually input job listings discovered outside the automated scraping pipeline. You can provide the job title, company, location, application URL, and the full job description to seamlessly integrate it into the scoring and tailoring workflow.
+
+### Run
+![Run](README_assets/a5.png)
+The Run screen gives you live tracking while an active job pipeline is executing. It features a visual phase stepper indicating overall progress across the Collect, Dedup, Score, and Tailor stages. It also provides a live activity feed showing real-time logs from the active scrapers and any encountered failures.
+
+### Artifacts
+![Artifacts](README_assets/a6.png)
+The Artifacts screen helps you manage all generated documents and application materials. It lists the directory paths for tailored CVs, cover letters, and application packages, while providing quick access buttons to open these folders directly on your system, ensuring everything is ready before submission.
+
+### Settings
+The Settings screen provides configuration for your workspace paths, displays the resolved local environment config, and includes a setup wizard to ensure your API keys and prerequisites are correctly established.
 
 ## CLI Reference
 
