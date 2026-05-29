@@ -22,6 +22,11 @@ class MemoryStore:
         self._priorities_file = self.memory_dir / "tracker-priorities.md"
 
     def load_profile(self) -> str:
+        if not self._profile_file.exists():
+            raise FileNotFoundError(
+                f"Candidate profile not found: {self._profile_file}. "
+                "Add job-search-profile.md to workspace/memory/ to enable scoring."
+            )
         return self._profile_file.read_text(encoding="utf-8")
 
     def load_cv_notes(self) -> str:

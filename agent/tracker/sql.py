@@ -242,7 +242,10 @@ class SqlTracker:
                 sa.select(roles_table.c.slug).where(roles_table.c.slug == listing.slug)
             ).first()
             if exists:
-                update_values = {k: v for k, v in values.items() if k not in {"slug", "first_seen"}}
+                # Preserve sticky user-facing fields that should never be
+                # reset by a re-score (e.g. role previously set to Draft/Ready).
+                _STICKY = {"slug", "first_seen", "cv_ready", "letter_ready", "status", "applied_date"}
+                update_values = {k: v for k, v in values.items() if k not in _STICKY}
                 conn.execute(
                     roles_table.update()
                     .where(roles_table.c.slug == listing.slug)
@@ -369,9 +372,18 @@ class SqlTracker:
         return set(rows)
 
     def get_known_dedup_keys(self) -> set[str]:
+        """Return dedup keys for all known roles, excluding scoring failures.
+
+        Scoring-failed rows are excluded so the scraper can pick them up again
+        on the next run and attempt to re-score them.
+        """
         engine = self._require_engine()
         with engine.begin() as conn:
-            rows = conn.execute(sa.select(roles_table.c.title, roles_table.c.company)).all()
+            rows = conn.execute(
+                sa.select(roles_table.c.title, roles_table.c.company).where(
+                    roles_table.c.scoring_status != "failed"
+                )
+            ).all()
         return {dedup_key(str(title or ""), str(company or "")) for title, company in rows}
 
     def list_pipeline_rows(

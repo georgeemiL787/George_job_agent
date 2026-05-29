@@ -46,10 +46,18 @@ def deduplicate(
     if known_dedup_keys is not None:
         known_title_company_pairs = set(known_dedup_keys)
     else:
+        # Fallback: derive dedup keys from slugs when known_dedup_keys is not provided.
+        # Slug format is: normalize(company)-normalize(title)-source (max 80 chars).
+        # We cannot reliably reverse-engineer title+company from a slug, so we
+        # use the full normalized slug as the key — this is conservative (may miss
+        # some duplicates) but avoids false positive dedup collisions.
         known_title_company_pairs = set()
         for slug in known_slugs:
-            parts = slug.rsplit("-", 1)[0]
-            known_title_company_pairs.add(parts.replace("-", ""))
+            # Strip the trailing source segment (e.g. "-wuzzuf", "-linkedin-jobs")
+            # by finding the last hyphen-separated known-source suffix.
+            # Best-effort: use the whole slug normalized as a key.
+            known_title_company_pairs.add(slug.replace("-", ""))
+
 
     for listing in listings:
         key = dedup_key(listing.title, listing.company)

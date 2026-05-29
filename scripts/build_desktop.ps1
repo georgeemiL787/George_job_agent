@@ -12,6 +12,7 @@ if ($Clean) {
 # Always clear dist so stale PyInstaller folders (e.g. old spec names) are not left behind.
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist
 
+
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 if ($LASTEXITCODE -ne 0) {
     throw "Dependency installation failed."
@@ -22,6 +23,37 @@ $env:PLAYWRIGHT_BROWSERS_PATH="0"
 & .\.venv\Scripts\python.exe -m playwright install chromium
 if ($LASTEXITCODE -ne 0) {
     throw "Playwright browser installation failed."
+}
+
+# ---------------------------------------------------------------------------
+# Scaffold workspace seed directories so PyInstaller can bundle them.
+# On a fresh clone these won't exist yet.  We create them with placeholder
+# files; the spec skips empty dirs, so only populated dirs get bundled.
+# ---------------------------------------------------------------------------
+$WorkspaceDirs = @(
+    "workspace\memory",
+    "workspace\roles",
+    "workspace\tracker"
+)
+foreach ($d in $WorkspaceDirs) {
+    $path = Join-Path $Root $d
+    if (-not (Test-Path $path)) {
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
+        Write-Host "Created workspace scaffold: $path"
+    }
+}
+
+# Drop a seed README into memory if no profile exists yet
+$MemoryReadme = Join-Path $Root "workspace\memory\README.txt"
+if (-not (Test-Path $MemoryReadme)) {
+    Set-Content -Path $MemoryReadme -Value @"
+Add your personal memory files here before running the agent:
+  - job-search-profile.md  (candidate profile for LLM scoring)
+  - cv-facts.md            (CV facts for tailoring)
+  - cv-role-playbook.md    (optional per-role tailoring hints)
+  - applications-log.md    (auto-created on first run)
+"@
+    Write-Host "Created workspace/memory/README.txt"
 }
 
 & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean packaging\george_job_agent.spec

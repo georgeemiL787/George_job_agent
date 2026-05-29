@@ -155,7 +155,7 @@ class LinkedInJobsScraper(BaseScraper):
                         "location": location,
                         "start": page * _PAGE_SIZE,
                     }
-                    if tpr and page == 0:
+                    if tpr:
                         params["f_TPR"] = tpr
 
                     logger.debug(f"LinkedIn search: {query!r} page {page}")

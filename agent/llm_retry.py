@@ -52,12 +52,13 @@ def call_with_backoff(
     base_seconds: float,
     label: str,
 ) -> T | None:
-    """Call *fn*, retrying on retryable errors with exponential back-off.
+    """Call *fn*, retrying on retryable errors or None returns with exponential back-off.
 
     Parameters
     ----------
     fn:
-        Zero-argument callable that either returns a result or raises.
+        Zero-argument callable that either returns a result (or None on
+        parse/validation failure) or raises.
     max_retries:
         Maximum number of attempts (first call + retries).
     base_seconds:
@@ -74,7 +75,19 @@ def call_with_backoff(
 
     for attempt in range(max_retries):
         try:
-            return fn()
+            result = fn()
+            if result is not None:
+                return result
+            # fn() returned None (e.g. JSON parse or validation failure).
+            # Treat as a soft failure and retry after a short back-off.
+            if attempt >= max_retries - 1:
+                break
+            delay = min(base_seconds * (2 ** attempt) + random.uniform(0, 1), 60.0)
+            logger.warning(
+                f"[llm_retry] {label} — attempt {attempt + 1}/{max_retries} "
+                f"returned None (parse/validation). Retrying in {delay:.1f}s…"
+            )
+            time.sleep(delay)
         except Exception as exc:
             if not is_retryable(exc):
                 logger.warning(f"[llm_retry] Non-retryable error for {label}: {exc}")

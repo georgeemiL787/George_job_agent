@@ -404,7 +404,6 @@ def run(
         fresh_set = {listing.slug for listing in fresh}
         prefiltered, prefilter_rejected = _prefilter_all(fresh, settings)
         report.prefilter_rejected = len(prefilter_rejected)
-        coordinator.update_progress(prefilter_rejected=report.prefilter_rejected)
         prefilter_by_slug = {listing.slug: pf for listing, pf in prefiltered + prefilter_rejected}
 
         scoring_cap = _max_scoring_cap(settings, opts)
@@ -415,7 +414,7 @@ def run(
 
         prefilter_passed_slugs = {listing.slug for listing, _ in prefiltered}
         persist_scores = not dry_run or settings.persist_dry_run_scores
-        skipped_prefilter = _persist_prefilter_skips(
+        _persist_prefilter_skips(
             tracker,
             fresh,
             prefilter_passed_slugs,
@@ -423,7 +422,8 @@ def run(
             run_id=run_id,
             persist=persist_scores,
         )
-        report.prefilter_rejected += skipped_prefilter
+        # Do NOT add to report.prefilter_rejected here — those listings are
+        # already counted in len(prefilter_rejected) above.
 
         fresh_prefiltered = [(listing, pf) for listing, pf in prefiltered if listing.slug in fresh_set]
         llm_candidates = fresh_prefiltered[:scoring_cap]
@@ -546,6 +546,12 @@ def run(
             )
 
         scored.sort(key=lambda x: x[1]["score"], reverse=True)
+        if len(scored) > settings.max_roles_per_run:
+            logger.warning(
+                f"Truncating scored list from {len(scored)} → {settings.max_roles_per_run} "
+                f"for tailoring (max_roles_per_run={settings.max_roles_per_run}). "
+                "Increase MAX_ROLES_PER_RUN in .env to tailor more per run."
+            )
         scored = scored[: settings.max_roles_per_run]
         report.scored = len(scored)
         _flush_report(report, settings, tracker, coordinator)

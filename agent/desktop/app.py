@@ -1,7 +1,6 @@
 """PySide6 desktop application."""
 from __future__ import annotations
 
-import json
 import sys
 import traceback
 from pathlib import Path
@@ -46,9 +45,8 @@ from agent.desktop.config_io import (
     write_run_sources,
 )
 from agent.desktop.run_estimator import RunEstimator
-from agent.desktop.scroll_page import make_scroll_page
 from agent.desktop.schedule import read_schedule, write_schedule
-from agent.desktop.theme import load_theme
+from agent.desktop.scroll_page import make_scroll_page
 from agent.desktop.services import (
     DesktopService,
     artifact_paths,
@@ -57,6 +55,7 @@ from agent.desktop.services import (
     install_miktex,
     install_playwright_chromium,
 )
+from agent.desktop.theme import load_theme
 from agent.desktop.widgets import RunDashboard, RunLiveStrip
 from agent.run_control import RunProgress
 from agent.version import __version__
@@ -179,13 +178,36 @@ class SetupDialog(QDialog):
         playwright_ok, playwright_msg = check_playwright()
         latex_ok, latex_msg = check_pdflatex(self.latex_bin.text().strip() or "pdflatex")
         key_msg = "OpenRouter key is set." if self.key.text().strip() else "OpenRouter key is missing."
+        workspace = Path(self.workspace.text().strip() or "workspace")
+        profile = workspace / "memory" / "job-search-profile.md"
+        cv_facts = workspace / "memory" / "cv-facts.md"
+        legacy_cv_notes = workspace / "memory" / "cv-notes.md"
+
+        def has_text(path: Path) -> bool:
+            try:
+                return path.is_file() and bool(path.read_text(encoding="utf-8").strip())
+            except OSError:
+                return False
+
+        profile_msg = (
+            f"Candidate profile ready: {profile}"
+            if has_text(profile)
+            else f"Candidate profile missing: {profile}"
+        )
+        cv_facts_msg = (
+            f"CV facts ready: {cv_facts if has_text(cv_facts) else legacy_cv_notes}"
+            if has_text(cv_facts) or has_text(legacy_cv_notes)
+            else f"CV facts missing: {cv_facts}"
+        )
         self.status.setPlainText(
             "\n".join(
                 [
                     key_msg,
+                    profile_msg,
+                    cv_facts_msg,
                     playwright_msg,
                     latex_msg,
-                    f"Workspace: {self.workspace.text().strip() or 'workspace'}",
+                    f"Workspace: {workspace}",
                     f"Playwright ready: {playwright_ok}",
                     f"LaTeX ready: {latex_ok}",
                 ]
@@ -616,7 +638,9 @@ class MainWindow(QMainWindow):
             self.apply_saved_sources()
             self.load_schedule()
             self.refresh_all()
-            self.run_status.setText("Idle")
+            self.run_status.setText(
+                "Setup blocked" if self.service.run_preflight_errors(dry_run=False) else "Idle"
+            )
         except Exception as exc:
             self.show_error(str(exc))
 
@@ -710,6 +734,12 @@ class MainWindow(QMainWindow):
     def refresh_settings(self) -> None:
         playwright_ok, playwright_msg = check_playwright()
         latex_ok, latex_msg = check_pdflatex(self.settings.latex_bin)
+        preflight = self.service.run_preflight_errors(dry_run=False)
+        preflight_lines = (
+            ["Run preflight: ready"]
+            if not preflight
+            else ["Run preflight: blocked", *[f"- {msg}" for msg in preflight]]
+        )
         self.settings_text.setPlainText(
             "\n".join(
                 [
@@ -717,6 +747,8 @@ class MainWindow(QMainWindow):
                     f"Database: {self.settings.database_url}",
                     f"OpenRouter key: {'set' if self.settings.openrouter_api_key else 'missing'}",
                     f"Schedule interval: {self.settings.schedule_interval_hours}h",
+                    "",
+                    *preflight_lines,
                     "",
                     self.service.resolved_config_summary(),
                     "",

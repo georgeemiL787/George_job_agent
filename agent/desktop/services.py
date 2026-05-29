@@ -9,20 +9,19 @@ from pathlib import Path
 from typing import Any
 
 from agent.artifacts import build_cv_artifact, build_letter_artifact
-from agent.scrape_health import run_scrape_health
 from agent.config import Settings
 from agent.cv.master_cv import load_master_cv_facts
 from agent.desktop.config_io import setup_is_missing
 from agent.desktop.role_context import listing_from_role, score_result_from_role
-from agent.tailor_gates import should_tailor_cv, should_tailor_letter
 from agent.manual_role import process_manual_role
 from agent.observability.run_report import load_active_run_report, load_latest_run_report
 from agent.package_role import package_role
 from agent.run_control import RunOptions, get_coordinator
-from agent.run_service import run_agent
-from agent.search.base import JobListing
+from agent.run_service import run_agent, run_preflight_errors
+from agent.scrape_health import run_scrape_health
 from agent.search.linkedin_import import RoleDraft, draft_to_listing
 from agent.sync_master import sync_master_tex
+from agent.tailor_gates import should_tailor_cv, should_tailor_letter
 from agent.tracker import get_tracker
 from agent.tracker.import_export import export_tracker, import_tracker
 from agent.tracker.models import RoleRecord, effective_score, format_added_date
@@ -81,6 +80,14 @@ class DesktopService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    def run_preflight_errors(self, *, dry_run: bool = False) -> list[str]:
+        return run_preflight_errors(self.settings, dry_run=dry_run)
+
+    def _raise_preflight_errors(self, *, dry_run: bool = False) -> None:
+        errors = self.run_preflight_errors(dry_run=dry_run)
+        if errors:
+            raise ValueError("Cannot start yet:\n- " + "\n- ".join(errors))
+
     def initialize(self) -> dict[str, Any]:
         return initialize_local_tracker(self.settings)
 
@@ -113,6 +120,7 @@ class DesktopService:
         mode: str = "fast",
         sources: set[str] | None = None,
     ) -> None:
+        self._raise_preflight_errors(dry_run=dry_run)
         run_agent(
             manual=True,
             dry_run=dry_run,
@@ -124,6 +132,7 @@ class DesktopService:
         from agent.scoring.payload import score_payload_json
         from agent.scoring.scorer import score_listing
 
+        self._raise_preflight_errors(dry_run=True)
         tracker = get_tracker(self.settings)
         tracker.load_or_create()
         profile = MemoryStore(self.settings).load_profile()
@@ -205,6 +214,7 @@ class DesktopService:
         return "\n".join(lines)
 
     def add_manual_role(self, body: dict[str, str]) -> dict[str, Any]:
+        self._raise_preflight_errors(dry_run=False)
         draft = RoleDraft(
             title=body["title"],
             company=body["company"],
@@ -432,4 +442,3 @@ def install_miktex() -> str:
     if result.returncode not in (0, -1978335189):  # 0 = success, -1978335189 = already installed
         raise RuntimeError(output or "MiKTeX installation failed.")
     return output or "MiKTeX installed. Restart the app and check setup again."
-
